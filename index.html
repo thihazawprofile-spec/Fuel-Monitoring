@@ -898,7 +898,7 @@ function calc(r){
     const state=val(r,['State','State/Division','Division']);
     const alarm=val(r,['Alarm','Status']);
     let priority=status==='CRITICAL'?1:status==='MAJOR'?2:status==='MINOR'?3:status==='NORMAL'?4:5;
-    return {...r,_site:String(site||''),_date:filledDate,_opening:opening,_filled:filled,_closing:closing,_dg:dg,_cph:cph,_cons:cons,_consumed:consumed,_remaining:remaining,_days:days,_shortage:shortage,_status:status,_priority:priority,_region:String(region||''),_state:String(state||''),_alarm:String(alarm||''),_warnings:[]};
+    return {...r,_site:String(site||''),_date:filledDate,_opening:opening,_filled:filled,_closing:closing,_dg:dg,_cph:cph,_cons:cons,_consumed:consumed,_remaining:remaining,_days:days,_shortage:shortage,_status:status,_priority:priority,_region:String(region||''),_state:String(state||''),_apm:String(apm||''),_dgrhperday:String(dgrhperday||''),_alarm:String(alarm||''),_warnings:[]};
 }
 
 // ============================================================
@@ -1096,6 +1096,8 @@ function drawTableOptimized() {
             <td><b>${esc(r._site)} ${warningBadge}</b></td>
             <td>${esc(r._region)}</td>
             <td>${esc(r._state)}</td>
+            <td>${esc(r._apm)}</td>
+            <td>${esc(r._dgrhperday)}</td>
             <td>${fmtDate(r._date)}</td>
             <td>${fmt(r._opening)}</td>
             <td>${fmt(r._filled)}</td>
@@ -1208,6 +1210,8 @@ function exportCSV(){
         'Site ID': r._site,
         Region: r._region,
         State: r._state,
+        apm: r._apm,
+        dgrh/day: r._dgrhperday,
         'Filled Date': isoDate(r._date),
         Opening: r._opening,
         Filled: r._filled,
