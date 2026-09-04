@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Fuel Monitoring & Shortage Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#697586;--border:#e5e9f0;--shadow:0 4px 18px rgba(25,40,70,.08);--blue:#2563eb;--red:#dc2626;--orange:#ea580c;--yellow:#ca8a04;--green:#16a34a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
+header{background:linear-gradient(135deg,#132238,#1e3a5f);color:#fff;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+header h1{margin:0;font-size:24px}header p{margin:5px 0 0;color:#cbd5e1;font-size:13px}
+.header-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.wrap{max-width:1700px;margin:auto;padding:20px}
+.toolbar,.card,.kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
+.toolbar{padding:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+button,.fileLabel{border:0;border-radius:9px;padding:10px 14px;cursor:pointer;font-weight:600;background:#eef2ff;color:#1e40af;transition:all 0.2s;font-size:13px}
+button:hover,.fileLabel:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+button:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+button.primary{background:var(--blue);color:white}
+button.google-btn{background:#4285f4;color:white}
+button.google-btn:hover{background:#357ae8}
+button.google-btn.connected{background:#34a853}
+.fileLabel{background:#eef2ff;color:#1e40af;display:inline-flex;align-items:center;gap:6px}
+.fileLabel input{display:none}
+input,select{border:1px solid #d7dce5;border-radius:9px;padding:10px;background:white;color:var(--text);min-height:40px}
+.search{min-width:220px;flex:1}.status{font-size:13px;color:var(--muted)}
+.connection-status{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600}
+.connection-status.connected{background:#dcfce7;color:#166534}
+.connection-status.disconnected{background:#fee2e2;color:#991b1b}
+.connection-status .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.connection-status.connected .dot{background:#16a34a;animation:pulse 2s infinite}
+.connection-status.disconnected .dot{background:#dc2626}
+.sync-indicator{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.sync-indicator.syncing{color:var(--blue)}
+.sync-indicator .spinner{width:14px;height:14px;border:2px solid #e5e9f0;border-top-color:var(--blue);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ===== MODAL STYLES ===== */
+.modal-overlay{
+    position:fixed;
+    top:0;left:0;right:0;bottom:0;
+    background:rgba(0,0,0,0.5);
+    backdrop-filter:blur(4px);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+    animation:fadeIn 0.3s ease;
+}
+.modal-overlay.active{display:flex}
+@keyframes fadeIn{
+    from{opacity:0;transform:scale(0.95)}
+    to{opacity:1;transform:scale(1)}
+}
+.modal{
+    background:white;
+    border-radius:20px;
+    max-width:560px;
+    width:90%;
+    padding:32px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.3);
+    position:relative;
+    max-height:90vh;
+    overflow-y:auto;
+}
+.modal-close{
+    position:absolute;
+    top:12px;right:16px;
+    background:none;
+    border:none;
+    font-size:28px;
+    color:#999;
+    cursor:pointer;
+    padding:4px 8px;
+    border-radius:8px;
+    transition:all 0.2s;
+}
+.modal-close:hover{
+    background:#f1f5f9;
+    color:#333;
+}
+.modal h2{
+    margin:0 0 8px 0;
+    font-size:24px;
+    color:var(--text);
+}
+.modal .subtitle{
+    color:var(--muted);
+    font-size:14px;
+    margin-bottom:24px;
+}
+.modal .option-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin:20px 0;
+}
+.modal .option-card{
+    border:2px solid var(--border);
+    border-radius:14px;
+    padding:24px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:all 0.25s;
+    background:white;
+}
+.modal .option-card:hover{
+    border-color:var(--blue);
+    transform:translateY(-2px);
+    box-shadow:0 8px 25px rgba(37,99,235,0.12);
+}
+.modal .option-card:active{
+    transform:scale(0.97);
+}
+.modal .option-card .icon{
+    font-size:40px;
+    display:block;
+    margin-bottom:10px;
+}
+.modal .option-card .title{
+    font-weight:700;
+    font-size:16px;
+    color:var(--text);
+    display:block;
+}
+.modal .option-card .desc{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:4px;
+    display:block;
+}
+.modal .option-card .badge{
+    display:inline-block;
+    background:#f1f5f9;
+    padding:2px 10px;
+    border-radius:12px;
+    font-size:10px;
+    font-weight:700;
+    color:var(--muted);
+    margin-top:8px;
+}
+.modal .option-card .badge.popular{
+    background:#dcfce7;
+    color:#166534;
+}
+.modal .google-form{
+    margin-top:20px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+    display:none;
+}
+.modal .google-form.active{display:block}
+.modal .google-form label{
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    display:block;
+    margin-bottom:4px;
+}
+.modal .google-form input{
+    width:100%;
+    margin-bottom:12px;
+}
+.modal .google-form .help-text{
+    font-size:11px;
+    color:var(--muted);
+    margin:-6px 0 12px 0;
+}
+.modal .form-actions{
+    display:flex;
+    gap:10px;
+    margin-top:16px;
+    flex-wrap:wrap;
+}
+.modal .form-actions button{
+    flex:1;
+    min-width:100px;
+}
+.modal .file-drop-zone{
+    border:2px dashed var(--border);
+    border-radius:14px;
+    padding:40px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:all 0.25s;
+    margin-top:12px;
+}
+.modal .file-drop-zone:hover{
+    border-color:var(--blue);
+    background:#f8faff;
+}
+.modal .file-drop-zone .icon{font-size:48px;display:block;margin-bottom:8px}
+.modal .file-drop-zone .title{font-weight:600;color:var(--text)}
+.modal .file-drop-zone .desc{font-size:13px;color:var(--muted);margin-top:4px}
+.modal .file-drop-zone input{display:none}
+.modal .file-info{
+    background:#f1f5f9;
+    border-radius:8px;
+    padding:10px 14px;
+    font-size:13px;
+    display:none;
+    align-items:center;
+    gap:10px;
+    margin-top:10px;
+}
+.modal .file-info.active{display:flex}
+.modal .file-info .filename{font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal .file-info .remove-file{
+    background:none;
+    border:none;
+    color:var(--red);
+    cursor:pointer;
+    font-weight:700;
+    padding:0 4px;
+}
+
+/* KPI Cards */
+.kpis{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.kpi{padding:15px;cursor:pointer;transition:all 0.2s ease;position:relative;border-radius:14px;background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow)}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(25,40,70,.15)}
+.kpi:active{transform:scale(0.98)}
+.kpi .label{font-size:12px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px}
+.kpi .value{font-size:27px;font-weight:800;margin-top:5px}
+.kpi .sub{font-size:11px;color:var(--muted);margin-top:3px}
+.kpi .click-hint{font-size:10px;color:var(--muted);opacity:0;transition:opacity 0.2s;position:absolute;bottom:8px;right:12px}
+.kpi:hover .click-hint{opacity:0.7}
+.kpi.active-filter{border:2px solid var(--blue);background:#f0f7ff}
+.kpi .badge-count{position:absolute;top:-8px;right:-8px;background:var(--red);color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+
+.validation-warning{background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;color:#92400e}
+.validation-warning strong{display:block;margin-bottom:4px}
+.validation-warning.error{background:#fee2e2;border-color:#ef4444;color:#991b1b}
+.validation-summary{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
+.validation-summary .valid{color:var(--green)}
+.validation-summary .invalid{color:var(--red)}
+
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 0 0;gap:12px;flex-wrap:wrap}
+.pagination-controls{display:flex;gap:6px;align-items:center}
+.pagination button{padding:6px 12px;font-size:12px;min-width:32px;background:#f1f5f9;color:var(--text);border-radius:6px}
+.pagination button.active{background:var(--blue);color:white}
+.pagination button:disabled{opacity:0.4;cursor:not-allowed}
+.pagination .page-info{font-size:13px;color:var(--muted)}
+.pagination .page-size-select{padding:6px 8px;font-size:12px;min-height:32px;width:auto}
+
+.performance-stats{font-size:11px;color:var(--muted);display:flex;gap:16px;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.card{padding:16px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
+.card h2{font-size:16px;margin:0 0 14px}.chartBox{height:290px}
+.tableCard{overflow:hidden}.tableTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:12px}
+.tableWrap{overflow:auto;max-height:560px;border:1px solid var(--border);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:1250px}
+th{position:sticky;top:0;background:#f1f5f9;z-index:2;text-align:left;padding:10px;border-bottom:1px solid #dfe4eb;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
+tr:hover{background:#f8fafc}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}
+.critical{background:#fee2e2;color:#991b1b}.major{background:#ffedd5;color:#9a3412}.minor{background:#fef3c7;color:#854d0e}.normal{background:#dcfce7;color:#166534}.unknown{background:#e5e7eb;color:#374151}
+.daysCritical{color:var(--red);font-weight:800}.daysMajor{color:var(--orange);font-weight:800}.daysMinor{color:var(--yellow);font-weight:800}.daysNormal{color:var(--green);font-weight:800}
+.empty{text-align:center;padding:50px;color:var(--muted)}footer{text-align:center;color:#8a94a6;font-size:11px;padding:18px}
+
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(4,1fr)}.grid2{grid-template-columns:1fr}}
+@media(max-width:700px){
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    header{padding:18px}
+    .wrap{padding:12px}
+    .header-actions{width:100%;justify-content:center}
+    .modal .option-grid{grid-template-columns:1fr}
+    .modal{padding:20px}
+}
+</style>
+</head>
+<body>
+<header>
+ <div>
+  <h1>⛽ Fuel Monitoring & Shortage Dashboard</h1>
+  <p>Fuel balance • consumption • shortage prediction • replenishment priority</p>
+ </div>
+ <div class="header-actions">
+  <div id="connectionStatus" class="connection-status disconnected">
+   <span class="dot"></span>
+   <span id="connectionText">No Data</span>
+  </div>
+  <span class="sync-indicator" id="syncIndicator" style="display:none;">
+   <span class="spinner"></span>
+   <span>Syncing...</span>
+  </span>
+  <div id="clock">—</div>
+ </div>
+</header>
+
+<div class="wrap">
+ <div class="toolbar">
+   <button class="primary" onclick="openUploadModal()">
+    📤 Upload Data
+   </button>
+   <button onclick="loadDemo()">Load Demo</button>
+   <button onclick="exportCSV()">Export Current View</button>
+   <button onclick="clearData()" style="background:#fee2e2;color:#991b1b">Clear</button>
+   <span class="status" id="fileStatus">Click "Upload Data" to get started.</span>
+   <span class="performance-stats" id="perfStats"></span>
+ </div>
+
+ <div class="toolbar">
+   <input id="search" class="search" placeholder="🔎 Search Site ID, Region, State, Alarm...">
+   <select id="alarmFilter"><option value="ALL">All Alarm Status</option><option value="CRITICAL">Critical</option><option value="MAJOR">Major</option><option value="MINOR">Minor</option><option value="NORMAL">Normal</option><option value="UNKNOWN">Unknown</option></select>
+   <select id="daysFilter"><option value="ALL">All Days Remaining</option><option value="0">Shortage / ≤ 0 day</option><option value="1">≤ 1 day</option><option value="3">≤ 3 days</option><option value="7">≤ 7 days</option><option value="14">≤ 14 days</option></select>
+   <input id="dateFilter" type="date" title="Filled date from">
+   <select id="sortBy"><option value="priority">Sort: Priority</option><option value="days">Sort: Days Remaining</option><option value="remaining">Sort: Remaining Fuel</option><option value="consumption">Sort: Consumption/day</option><option value="filled">Sort: Filled Date</option><option value="site">Sort: Site ID</option></select>
+   <button onclick="resetFilters()" style="background:#f1f5f9;color:var(--text)">Reset Filters</button>
+ </div>
+
+ <!-- KPI Cards -->
+ <div class="kpis">
+  <div class="kpi" data-filter="ALL" onclick="filterByKPI('ALL')">
+   <div class="label">📊 TOTAL SITES</div>
+   <div class="value" id="kTotal">0</div>
+   <div class="sub">Loaded records</div>
+   <span class="click-hint">↗ Click to view all</span>
+  </div>
+  <div class="kpi" data-filter="CRITICAL" onclick="filterByKPI('CRITICAL')">
+   <div class="label">🔴 CRITICAL</div>
+   <div class="value" id="kCritical">0</div>
+   <div class="sub">Immediate action</div>
+   <span class="badge-count" id="criticalBadge" style="display:none">0</span>
+   <span class="click-hint">↗ Click to filter</span>
+  </div>
+  <div class="kpi" data-filter="MAJOR" onclick="filterByKPI('MAJOR')">
+   <div class="label">🟠 MAJOR</div>
+   <div class="value" id="kMajor">0</div>
+   <div class="sub">≤ 3 days</div>
+   <span class="click-hint">↗ Click to filter</span>
+  </div>
+  <div class="kpi" data-filter="MINOR" onclick="filterByKPI('MINOR')">
+   <div class="label">🟡 MINOR</div>
+   <div class="value" id="kMinor">0</div>
+   <div class="sub">≤ 7 days</div>
+   <span class="click-hint">↗ Click to filter</span>
+  </div>
+  <div class="kpi" data-filter="NORMAL" onclick="filterByKPI('NORMAL')">
+   <div class="label">🟢 NORMAL</div>
+   <div class="value" id="kNormal">0</div>
+   <div class="sub">&gt; 7 days</div>
+   <span class="click-hint">↗ Click to filter</span>
+  </div>
+  <div class="kpi" onclick="filterByKPI('UNKNOWN')">
+   <div class="label">⛽ REMAINING</div>
+   <div class="value" id="kFuel">0</div>
+   <div class="sub">Estimated litres</div>
+   <span class="click-hint">↗ Click to view</span>
+  </div>
+  <div class="kpi" onclick="filterByKPI('SHORTAGE')">
+   <div class="label">📅 NEXT SHORTAGE</div>
+   <div class="value" id="kNext">—</div>
+   <div class="sub">Earliest predicted date</div>
+   <span class="click-hint">↗ Click to view</span>
+  </div>
+ </div>
+
+ <div id="validationContainer"></div>
+
+ <div class="grid2">
+  <div class="card"><h2>Alarm Distribution</h2><div class="chartBox"><canvas id="alarmChart"></canvas></div></div>
+  <div class="card"><h2>Lowest Fuel / Highest Risk Sites</h2><div class="chartBox"><canvas id="riskChart"></canvas></div></div>
+ </div>
+
+ <div class="grid2">
+  <div class="card"><h2>Estimated Shortage Timeline</h2><div class="chartBox"><canvas id="timelineChart"></canvas></div></div>
+  <div class="card"><h2>Fuel Consumption — Top Sites</h2><div class="chartBox"><canvas id="consChart"></canvas></div></div>
+ </div>
+
+ <div class="card tableCard">
+  <div class="tableTop">
+   <div>
+    <h2 style="margin:0">🚨 Fuel Delivery Priority</h2>
+    <span class="status" id="tableStatus">0 sites</span>
+   </div>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <span class="status" id="renderTime"></span>
+    <button onclick="resetFilters()">Reset Filters</button>
+   </div>
+  </div>
+  <div class="tableWrap" id="tableWrap">
+   <table>
+    <thead><tr>
+     <th>Priority</th><th>Alarm</th><th>Site ID</th><th>Region</th><th>State</th><th>Filled Date</th><th>Opening</th><th>Filled</th><th>Closing</th><th>Consumption/day</th><th>Consumed</th><th>Remaining Fuel</th><th>Days Remaining</th><th>Estimated Shortage</th><th>Original Alarm</th>
+    </tr></thead>
+    <tbody id="tbody"><tr><td colspan="15" class="empty">Click "Upload Data" to load your fuel monitoring data.</td></tr></tbody>
+   </table>
+  </div>
+  <div class="pagination" id="pagination">
+   <div class="page-info" id="pageInfo">Showing 0-0 of 0</div>
+   <div class="pagination-controls">
+    <select class="page-size-select" id="pageSize" onchange="changePageSize()">
+     <option value="25">25 per page</option>
+     <option value="50" selected>50 per page</option>
+     <option value="100">100 per page</option>
+     <option value="200">200 per page</option>
+    </select>
+    <button onclick="goToPage(1)" id="firstPage" disabled>⟪</button>
+    <button onclick="goToPage(currentPage-1)" id="prevPage" disabled>⟨</button>
+    <span id="pageNumbers"></span>
+    <button onclick="goToPage(currentPage+1)" id="nextPage" disabled>⟩</button>
+    <button onclick="goToPage(totalPages)" id="lastPage" disabled>⟫</button>
+   </div>
+  </div>
+ </div>
+ <footer>Fuel Monitoring Dashboard • Data from local files or Google Sheets • Auto-refresh available</footer>
+</div>
+
+<!-- ===== UPLOAD MODAL ===== -->
+<div class="modal-overlay" id="uploadModal" onclick="if(event.target===this)closeUploadModal()">
+ <div class="modal">
+  <button class="modal-close" onclick="closeUploadModal()">✕</button>
+  <h2>📤 Upload Data</h2>
+  <p class="subtitle">Choose how you want to load your fuel monitoring data</p>
+  
+  <div class="option-grid">
+   <div class="option-card" onclick="selectOption('file')">
+    <span class="icon">📁</span>
+    <span class="title">Local File</span>
+    <span class="desc">Upload Excel or CSV from your computer</span>
+    <span class="badge popular">Popular</span>
+   </div>
+   <div class="option-card" onclick="selectOption('google')">
+    <span class="icon">📊</span>
+    <span class="title">Google Sheets</span>
+    <span class="desc">Connect to a shared Google Sheet</span>
+    <span class="badge">Live Sync</span>
+   </div>
+  </div>
+
+  <div id="fileSection" style="display:none;">
+   <div class="file-drop-zone" id="fileDropZone" onclick="document.getElementById('fileInputModal').click()">
+    <span class="icon">📂</span>
+    <span class="title">Drop your file here or click to browse</span>
+    <span class="desc">Supports .xlsx, .xls, .csv</span>
+    <input id="fileInputModal" type="file" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event)">
+   </div>
+   <div class="file-info" id="fileInfo">
+    <span>📄</span>
+    <span class="filename" id="fileNameDisplay">file.xlsx</span>
+    <button class="remove-file" onclick="removeFile()">✕</button>
+   </div>
+   <div class="form-actions">
+    <button class="primary" id="uploadFileBtn" onclick="uploadSelectedFile()" disabled>📤 Upload File</button>
+    <button onclick="closeUploadModal()">Cancel</button>
+   </div>
+  </div>
+
+  <div id="googleSection" style="display:none;">
+   <div class="google-form active">
+    <label>🔑 Google Sheet ID</label>
+    <input id="spreadsheetIdInput" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+    <div class="help-text">Found in the URL: docs.google.com/spreadsheets/d/<b>YOUR_SHEET_ID</b>/edit</div>
+    
+    <label>📄 Sheet Name</label>
+    <input id="sheetNameInput" placeholder="Sheet1" value="Sheet1">
+    <div class="help-text">Leave as "Sheet1" unless your sheet has a different name</div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+     <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:13px;cursor:pointer;">
+      <input type="checkbox" id="autoSyncCheck" checked>
+      🔄 Auto-sync every 30 seconds
+     </label>
+    </div>
+
+    <div class="form-actions">
+     <button class="google-btn" id="fetchSheetBtn" onclick="fetchFromGoogleSheets()">
+      📥 Fetch Data
+     </button>
+     <button onclick="closeUploadModal()">Cancel</button>
+    </div>
+    <div id="googleStatusMessage" style="font-size:13px;color:var(--muted);margin-top:10px;"></div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<script>
+// ============================================================
+// GOOGLE SHEETS CONFIGURATION
+// ============================================================
+const GOOGLE_API_KEY = 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04'; // Replace with your API key
+
+// ============================================================
+// GLOBAL STATE
+// ============================================================
+let rows=[], filtered=[], charts={};
+let currentPage = 1;
+let pageSize = 50;
+let totalPages = 1;
+let activeKpiFilter = null;
+let renderStartTime = 0;
+let selectedOption = null;
+let selectedFile = null;
+let googleSheetData = null;
+let autoSyncInterval = null;
+let isAutoSyncEnabled = false;
+
+const $=id=>document.getElementById(id);
+const num=v=>{if(v===null||v===undefined||v==="")return 0; const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(n)?0:n};
+
+// ============================================================
+// MODAL FUNCTIONS
+// ============================================================
+function openUploadModal() {
+    $('uploadModal').classList.add('active');
+    selectedOption = null;
+    $('fileSection').style.display = 'none';
+    $('googleSection').style.display = 'none';
+    $('fileInfo').classList.remove('active');
+    $('uploadFileBtn').disabled = true;
+    $('googleStatusMessage').textContent = '';
+    $('googleStatusMessage').style.color = 'var(--muted)';
+}
+
+function closeUploadModal() {
+    $('uploadModal').classList.remove('active');
+}
+
+function selectOption(option) {
+    selectedOption = option;
+    $('fileSection').style.display = option === 'file' ? 'block' : 'none';
+    $('googleSection').style.display = option === 'google' ? 'block' : 'none';
+    
+    document.querySelectorAll('.option-card').forEach(card => {
+        card.style.borderColor = 'var(--border)';
+        card.style.background = 'white';
+    });
+    if (option === 'file') {
+        document.querySelectorAll('.option-card')[0].style.borderColor = 'var(--blue)';
+        document.querySelectorAll('.option-card')[0].style.background = '#f8faff';
+    } else {
+        document.querySelectorAll('.option-card')[1].style.borderColor = 'var(--blue)';
+        document.querySelectorAll('.option-card')[1].style.background = '#f8faff';
+    }
+}
+
+// ============================================================
+// LOCAL FILE HANDLING
+// ============================================================
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    selectedFile = file;
+    $('fileNameDisplay').textContent = file.name;
+    $('fileInfo').classList.add('active');
+    $('uploadFileBtn').disabled = false;
+}
+
+function removeFile() {
+    selectedFile = null;
+    $('fileInputModal').value = '';
+    $('fileInfo').classList.remove('active');
+    $('uploadFileBtn').disabled = true;
+}
+
+function uploadSelectedFile() {
+    if (!selectedFile) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+        try {
+            let wb;
+            if (selectedFile.name.toLowerCase().endsWith('.csv')) {
+                wb = XLSX.read(ev.target.result, {type:'string'});
+            } else {
+                wb = XLSX.read(ev.target.result, {type:'array', cellDates:true});
+            }
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(ws, {defval:''});
+            processWithValidation(data);
+            closeUploadModal();
+            $('fileStatus').textContent = `✅ Loaded ${data.length} rows from "${selectedFile.name}"`;
+            updateConnectionStatus(true, 'Local File');
+        } catch(err) {
+            $('fileStatus').textContent = '❌ Could not read file: ' + err.message;
+            alert('Error reading file: ' + err.message);
+        }
+    };
+    
+    if (selectedFile.name.toLowerCase().endsWith('.csv')) {
+        reader.readAsText(selectedFile);
+    } else {
+        reader.readAsArrayBuffer(selectedFile);
+    }
+}
+
+// ============================================================
+// GOOGLE SHEETS FUNCTIONS (FIXED)
+// ============================================================
+async function fetchFromGoogleSheets() {
+    const sheetId = $('spreadsheetIdInput').value.trim();
+    const sheetName = $('sheetNameInput').value.trim() || 'Sheet1';
+    const autoSync = $('autoSyncCheck').checked;
+    
+    if (!sheetId) {
+        $('googleStatusMessage').textContent = '⚠️ Please enter a Google Sheet ID';
+        $('googleStatusMessage').style.color = '#92400e';
+        return;
+    }
+    
+    $('googleStatusMessage').textContent = '⏳ Connecting to Google Sheets...';
+    $('googleStatusMessage').style.color = '#2563eb';
+    $('fetchSheetBtn').disabled = true;
+    $('fetchSheetBtn').textContent = '⏳ Loading...';
+    
+    try {
+        $('googleStatusMessage').textContent = '⏳ Fetching data (limit: 500 rows)...';
+        
+        const data = await fetchGoogleSheetData(sheetId, sheetName);
+        
+        if (data && data.length > 0) {
+            $('googleStatusMessage').textContent = `⏳ Processing ${data.length} rows...`;
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            processWithValidation(data);
+            closeUploadModal();
+            $('fileStatus').textContent = `✅ Loaded ${data.length} rows from Google Sheets (${sheetName})`;
+            updateConnectionStatus(true, 'Google Sheets');
+            
+            if (autoSync) {
+                setupAutoSync(sheetId, sheetName);
+                $('fileStatus').textContent += ' 🔄 Auto-sync enabled (10 mins)';
+            }
+        } else {
+            $('googleStatusMessage').textContent = '⚠️ No data found. Check the sheet name and content.';
+            $('googleStatusMessage').style.color = '#92400e';
+        }
+    } catch (error) {
+        console.error('Google Sheets error:', error);
+        
+        let errorMsg = error.message;
+        if (error.message.includes('timeout') || error.name === 'AbortError') {
+            errorMsg = '⏰ Request timed out. Try:\n• Use "Local File" upload\n• Reduce rows in your sheet\n• Check internet connection';
+        } else if (error.message.includes('404')) {
+            errorMsg = '❌ Sheet not found. Check:\n• Sheet ID is correct\n• Sheet name is correct\n• Sheet is shared publicly';
+        } else if (error.message.includes('403')) {
+            errorMsg = '❌ Access denied. Make sure:\n• Sheet is shared publicly\n• API key is correct\n• Sheets API is enabled';
+        } else if (error.message.includes('500')) {
+            errorMsg = '❌ Google Sheets server error. Try again later or use Local File upload.';
+        }
+        
+        $('googleStatusMessage').textContent = errorMsg;
+        $('googleStatusMessage').style.color = '#991b1b';
+        $('googleStatusMessage').style.whiteSpace = 'pre-line';
+    } finally {
+        $('fetchSheetBtn').disabled = false;
+        $('fetchSheetBtn').textContent = '📥 Fetch Data';
+    }
+}
+
+async function fetchGoogleSheetData(sheetId, sheetName) {
+    const apiKey = GOOGLE_API_KEY;
+    
+    // Fetch only first 500 rows to prevent timeout
+    const range = `${sheetName}!A1:Z501`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`;
+    
+    try {
+        // 15 second timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        
+        const response = await fetch(url, { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            let errorMsg = `HTTP ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMsg += `: ${errorData.error?.message || response.statusText}`;
+            } catch(e) {
+                errorMsg += `: ${response.statusText}`;
+            }
+            throw new Error(errorMsg);
+        }
+        
+        const result = await response.json();
+        const rows = result.values;
+        
+        if (!rows || rows.length < 2) {
+            return [];
+        }
+        
+        const headers = rows[0];
+        const data = rows.slice(1).map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+                obj[header] = row[index] || '';
+            });
+            return obj;
+        });
+        
+        if (rows.length - 1 >= 500) {
+            $('googleStatusMessage').textContent = `⚠️ Loaded first 500 rows. Your sheet has more.`;
+        } else {
+            $('googleStatusMessage').textContent = `✅ Loaded ${data.length} rows from "${sheetName}"`;
+        }
+        
+        return data;
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error('Request timed out. Try using Local File upload instead.');
+        }
+        throw error;
+    }
+}
+
+function setupAutoSync(sheetId, sheetName) {
+    if (autoSyncInterval) {
+        clearInterval(autoSyncInterval);
+        autoSyncInterval = null;
+    }
+    
+    isAutoSyncEnabled = true;
+    
+    $('syncIndicator').style.display = 'inline-flex';
+    $('syncIndicator').className = 'sync-indicator syncing';
+    
+    autoSyncInterval = setInterval(async () => {
+        try {
+            $('syncIndicator').querySelector('span:last-child').textContent = 'Syncing...';
+            const data = await fetchGoogleSheetData(sheetId, sheetName);
+            if (data && data.length > 0) {
+                processWithValidation(data);
+                $('fileStatus').textContent = `🔄 Auto-synced at ${new Date().toLocaleTimeString()} - ${data.length} rows`;
+                $('syncIndicator').querySelector('span:last-child').textContent = 'Synced ✓';
+                setTimeout(() => {
+                    $('syncIndicator').querySelector('span:last-child').textContent = 'Auto-sync';
+                }, 2000);
+            }
+        } catch (error) {
+            console.warn('Auto-sync failed:', error);
+            $('syncIndicator').querySelector('span:last-child').textContent = 'Sync error';
+        }
+    }, 30000);
+}
+
+// ============================================================
+// DATA VALIDATION & PROCESSING
+// ============================================================
+function validateRow(row, index) {
+    const errors = [];
+    const warnings = [];
+    
+    const site = val(row, ['Site ID','SiteID','Site']);
+    if (!site || site === '') {
+        errors.push(`Row ${index + 1}: Missing Site ID`);
+    }
+    
+    const opening = num(val(row, ['Opening','Opening Fuel']));
+    const filled = num(val(row, ['Filled','Fuel Filled','Filled Qty','Fuel Fill']));
+    const closing = num(val(row, ['Closing','Closing Fuel']));
+    
+    if (opening < 0) warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Opening fuel is negative (${opening})`);
+    if (filled < 0) warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Filled fuel is negative (${filled})`);
+    if (closing < 0) warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Closing fuel is negative (${closing})`);
+    if (opening > 100000) warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Opening fuel seems unusually high (${opening} L)`);
+    if (closing > 100000) warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Closing fuel seems unusually high (${closing} L)`);
+    
+    const date = parseDate(val(row, ['Date','Filled Date','Fill Date']));
+    if (date && date > new Date()) {
+        warnings.push(`Row ${index + 1} (${site || 'Unknown'}): Filled date is in the future (${date.toLocaleDateString()})`);
+    }
+    
+    return { errors, warnings, hasError: errors.length > 0, hasWarning: warnings.length > 0 };
+}
+
+function processWithValidation(data) {
+    const validationResults = [];
+    const validRows = [];
+    const errorRows = [];
+    
+    data.forEach((row, index) => {
+        const validation = validateRow(row, index);
+        validationResults.push({ index, row, validation });
+        
+        if (validation.hasError) {
+            errorRows.push({ index, row, errors: validation.errors });
+        } else {
+            const calculated = calc(row);
+            validRows.push(calculated);
+            if (validation.hasWarning) {
+                calculated._warnings = validation.warnings;
+            }
+        }
+    });
+    
+    showValidationSummary(validRows.length, errorRows, validationResults);
+    
+    rows = validRows;
+    $('fileStatus').textContent = `✅ Loaded ${rows.length.toLocaleString()} valid records. ${errorRows.length} rows had errors and were skipped.`;
+    
+    if (errorRows.length > 0) {
+        console.warn('Skipped rows with errors:', errorRows);
+    }
+    
+    render();
+}
+
+function showValidationSummary(validCount, errorRows, allResults) {
+    const container = $('validationContainer');
+    let html = '';
+    
+    if (errorRows.length > 0) {
+        html += `<div class="validation-warning error">
+            <strong>❌ ${errorRows.length} row(s) had critical errors and were skipped:</strong>
+            <ul style="margin:4px 0 0 20px;font-size:12px;">`;
+        errorRows.slice(0, 5).forEach(e => {
+            html += `<li>${e.errors.join('; ')}</li>`;
+        });
+        if (errorRows.length > 5) {
+            html += `<li>... and ${errorRows.length - 5} more</li>`;
+        }
+        html += `</ul></div>`;
+    }
+    
+    const warnings = allResults.filter(r => r.validation.hasWarning && !r.validation.hasError);
+    if (warnings.length > 0) {
+        html += `<div class="validation-warning">
+            <strong>⚠️ ${warnings.length} row(s) have warnings (data may be unusual):</strong>
+            <ul style="margin:4px 0 0 20px;font-size:12px;">`;
+        warnings.slice(0, 3).forEach(w => {
+            html += `<li>${w.validation.warnings.slice(0, 2).join('; ')}${w.validation.warnings.length > 2 ? '...' : ''}</li>`;
+        });
+        if (warnings.length > 3) {
+            html += `<li>... and ${warnings.length - 3} more</li>`;
+        }
+        html += `</ul></div>`;
+    }
+    
+    if (validCount > 0 || errorRows.length > 0) {
+        html += `<div class="validation-summary">
+            <span class="valid">✅ Valid: ${validCount}</span>
+            <span class="invalid">❌ Errors: ${errorRows.length}</span>
+            <span class="warning">⚠️ Warnings: ${warnings.length}</span>
+        </div>`;
+    }
+    
+    container.innerHTML = html;
+}
+
+// ============================================================
+// CORE FUNCTIONS
+// ============================================================
+function norm(s){return String(s??'').trim().toLowerCase().replace(/[\s_\-\/().]+/g,'')}
+function findKey(obj, names){
+    const keys=Object.keys(obj); 
+    for(const n of names){
+        const k=keys.find(x=>norm(x)===norm(n));
+        if(k!==undefined) return k;
+    }
+    return null;
+}
+function val(o,names){const k=findKey(o,names);return k?o[k]:''}
+function parseDate(v){
+    if(v instanceof Date && !isNaN(v)) return v;
+    if(typeof v==='number'){const d=new Date(Date.UTC(1899,11,30)+v*86400000);return isNaN(d)?null:d}
+    const s=String(v??'').trim(); if(!s)return null;
+    let d=new Date(s); if(!isNaN(d))return d;
+    const m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); 
+    if(m)return new Date(+m[3],+m[2]-1,+m[1]);
+    return null;
+}
+function fmtDate(d){return d&&!isNaN(d)?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'2-digit'}):'—'}
+function isoDate(d){return d&&!isNaN(d)?new Date(d).toISOString().slice(0,10):''}
+
+function calc(r){
+    const site=val(r,['Site ID','SiteID','Site']);
+    const filledDate=parseDate(val(r,['Date','Filled Date','Fill Date']));
+    const opening=num(val(r,['Opening','Opening Fuel']));
+    const filled=num(val(r,['Filled','Fuel Filled','Filled Qty','Fuel Fill']));
+    const closing=num(val(r,['Closing','Closing Fuel']));
+    const dg=num(val(r,['DG RH/Day','DG RH Day','DG RH','DG Running Hours/Day']));
+    const cph=num(val(r,['CPH','Consumption Per Hour','L/H']));
+    const consRaw=num(val(r,['Consumption/day','Consumption Day','Daily Consumption','Consumption per day']));
+    const consumed=num(val(r,['Current Consumed','Consumed','Current Consumption']));
+    const remainingRaw=val(r,['Remaining Fuel','Remaining','Fuel Remaining']);
+    let remaining=remainingRaw===''?closing-consumed:num(remainingRaw);
+    let cons=consRaw;
+    if(!cons && dg && cph) cons=dg*cph;
+    let days=cons>0?remaining/cons:Infinity;
+    let shortage=null;
+    if(isFinite(days)) shortage=new Date(Date.now()+days*86400000);
+    let status;
+    if(!isFinite(days)){status='UNKNOWN'}else if(days<=1){status='CRITICAL'}else if(days<=3){status='MAJOR'}else if(days<=7){status='MINOR'}else status='NORMAL';
+    if(remaining<=0){status='CRITICAL'}
+    const region=val(r,['Region','Operation Region','OperationRegion']);
+    const state=val(r,['State','State/Division','Division']);
+    const alarm=val(r,['Alarm','Status']);
+    let priority=status==='CRITICAL'?1:status==='MAJOR'?2:status==='MINOR'?3:status==='NORMAL'?4:5;
+    return {...r,_site:String(site||''),_date:filledDate,_opening:opening,_filled:filled,_closing:closing,_dg:dg,_cph:cph,_cons:cons,_consumed:consumed,_remaining:remaining,_days:days,_shortage:shortage,_status:status,_priority:priority,_region:String(region||''),_state:String(state||''),_alarm:String(alarm||''),_warnings:[]};
+}
+
+// ============================================================
+// RENDER FUNCTIONS
+// ============================================================
+let renderTimeout;
+
+function throttledRender() {
+    clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(() => {
+        renderStartTime = performance.now();
+        render();
+        const endTime = performance.now();
+        const renderTime = (endTime - renderStartTime).toFixed(2);
+        const perfStats = $('perfStats');
+        perfStats.textContent = `⚡ Render: ${renderTime}ms • ${filtered.length} rows`;
+    }, 100);
+}
+
+function getPageData() {
+    const start = (currentPage - 1) * pageSize;
+    const end = Math.min(start + pageSize, filtered.length);
+    return { start, end, pageData: filtered.slice(start, end) };
+}
+
+function updatePagination() {
+    totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    
+    const { start, end } = getPageData();
+    
+    $('pageInfo').textContent = `Showing ${start + 1}-${end} of ${filtered.length}`;
+    $('firstPage').disabled = currentPage === 1;
+    $('prevPage').disabled = currentPage === 1;
+    $('nextPage').disabled = currentPage === totalPages;
+    $('lastPage').disabled = currentPage === totalPages;
+    
+    let pageHtml = '';
+    const maxVisible = 7;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if (endPage - startPage < maxVisible - 1) {
+        startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        pageHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+    }
+    $('pageNumbers').innerHTML = pageHtml;
+}
+
+function goToPage(page) {
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    throttledRender();
+}
+
+function changePageSize() {
+    pageSize = parseInt($('pageSize').value);
+    currentPage = 1;
+    throttledRender();
+}
+
+function render() {
+    const q=$('search').value.toLowerCase().trim();
+    const af=$('alarmFilter').value;
+    const df=$('daysFilter').value;
+    const from=$('dateFilter').value;
+    
+    filtered = rows.filter(r => {
+        if (!q && af === 'ALL' && df === 'ALL' && !from) return true;
+        
+        if (q) {
+            const text = (r._site + ' ' + r._region + ' ' + r._state + ' ' + r._alarm + ' ' + r._status).toLowerCase();
+            if (!text.includes(q)) return false;
+        }
+        if (af !== 'ALL' && r._status !== af) return false;
+        if (df !== 'ALL' && !(isFinite(r._days) && r._days <= +df)) return false;
+        if (from && (!r._date || isoDate(r._date) < from)) return false;
+        return true;
+    });
+    
+    const s=$('sortBy').value;
+    if (s === 'priority') {
+        filtered.sort((a,b) => a._priority - b._priority || a._days - b._days);
+    } else if (s === 'days') {
+        filtered.sort((a,b) => a._days - b._days);
+    } else if (s === 'remaining') {
+        filtered.sort((a,b) => a._remaining - b._remaining);
+    } else if (s === 'consumption') {
+        filtered.sort((a,b) => b._cons - a._cons);
+    } else if (s === 'filled') {
+        filtered.sort((a,b) => (b._date?.getTime()||0) - (a._date?.getTime()||0));
+    } else {
+        filtered.sort((a,b) => a._site.localeCompare(b._site));
+    }
+    
+    updateKPIs();
+    drawChartsOptimized();
+    drawTableOptimized();
+}
+
+function updateKPIs(){
+    const c=x=>filtered.filter(r=>r._status===x).length;
+    const total = filtered.length;
+    const critical = c('CRITICAL');
+    const major = c('MAJOR');
+    const minor = c('MINOR');
+    const normal = c('NORMAL');
+    const unknown = c('UNKNOWN');
+    
+    $('kTotal').textContent = total.toLocaleString();
+    $('kCritical').textContent = critical.toLocaleString();
+    $('kMajor').textContent = major.toLocaleString();
+    $('kMinor').textContent = minor.toLocaleString();
+    $('kNormal').textContent = normal.toLocaleString();
+    
+    const badge = $('criticalBadge');
+    if (critical > 0) {
+        badge.style.display = 'flex';
+        badge.textContent = critical;
+    } else {
+        badge.style.display = 'none';
+    }
+    
+    $('kFuel').textContent = filtered.reduce((a,r)=>a+r._remaining,0).toLocaleString(undefined,{maximumFractionDigits:1});
+    
+    const dates=filtered.filter(r=>r._shortage&&r._shortage.getTime()>=0).map(r=>r._shortage);
+    $('kNext').textContent=dates.length?fmtDate(new Date(Math.min(...dates.map(d=>d.getTime())))):'—';
+}
+
+function destroy(k){if(charts[k]){charts[k].destroy(); delete charts[k];}}
+function baseOpts(){return {responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false}},y:{beginAtZero:true}}}}
+
+function drawChartsOptimized() {
+    destroy('alarm'); destroy('risk'); destroy('timeline'); destroy('cons');
+    
+    const alarmData = ['CRITICAL','MAJOR','MINOR','NORMAL','UNKNOWN'].map(x => filtered.filter(r=>r._status===x).length);
+    charts.alarm = new Chart($('alarmChart'), {
+        type:'doughnut',
+        data:{labels:['Critical','Major','Minor','Normal','Unknown'], datasets:[{data:alarmData}]},
+        options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}}
+    });
+    
+    const riskData = [...filtered].sort((a,b)=>a._remaining-b._remaining).slice(0,12);
+    charts.risk = new Chart($('riskChart'), {
+        type:'bar',
+        data:{labels:riskData.map(r=>r._site), datasets:[{label:'Remaining Fuel (L)',data:riskData.map(r=>r._remaining)}]},
+        options:{...baseOpts(), indexAxis:'y'}
+    });
+    
+    const tl={};
+    filtered.forEach(r=>{if(r._shortage){const k=isoDate(r._shortage); tl[k]=(tl[k]||0)+1}});
+    const tlKeys=Object.keys(tl).sort().slice(0,14);
+    charts.timeline = new Chart($('timelineChart'), {
+        type:'bar',
+        data:{labels:tlKeys, datasets:[{label:'Sites',data:tlKeys.map(k=>tl[k])}]},
+        options:baseOpts()
+    });
+    
+    const conData = [...filtered].sort((a,b)=>b._cons-a._cons).slice(0,12);
+    charts.cons = new Chart($('consChart'), {
+        type:'bar',
+        data:{labels:conData.map(r=>r._site), datasets:[{label:'Consumption/day (L)',data:conData.map(r=>r._cons)}]},
+        options:{...baseOpts(), indexAxis:'y'}
+    });
+}
+
+function drawTableOptimized() {
+    const tb = $('tbody');
+    const { start, end, pageData } = getPageData();
+    
+    $('tableStatus').textContent = `Showing ${start + 1}-${end} of ${filtered.length} sites`;
+    
+    if (!pageData.length) {
+        tb.innerHTML = '<tr><td colspan="15" class="empty">No matching sites.</td></tr>';
+        updatePagination();
+        return;
+    }
+    
+    const rowsHtml = [];
+    pageData.forEach(r => {
+        const dc = r._status === 'CRITICAL' ? 'daysCritical' : 
+                   r._status === 'MAJOR' ? 'daysMajor' : 
+                   r._status === 'MINOR' ? 'daysMinor' : 'daysNormal';
+        
+        const warningBadge = r._warnings && r._warnings.length > 0 
+            ? `<span title="${esc(r._warnings.join('; '))}" style="color:#f59e0b;cursor:help;">⚠️</span>` 
+            : '';
+        
+        rowsHtml.push(`<tr>
+            <td><b>#${r._priority}</b></td>
+            <td>${badge(r._status)}</td>
+            <td><b>${esc(r._site)} ${warningBadge}</b></td>
+            <td>${esc(r._region)}</td>
+            <td>${esc(r._state)}</td>
+            <td>${fmtDate(r._date)}</td>
+            <td>${fmt(r._opening)}</td>
+            <td>${fmt(r._filled)}</td>
+            <td>${fmt(r._closing)}</td>
+            <td>${fmt(r._cons)}</td>
+            <td>${fmt(r._consumed)}</td>
+            <td><b>${fmt(r._remaining)}</b></td>
+            <td class="${dc}">${daysText(r)}</td>
+            <td>${fmtDate(r._shortage)}</td>
+            <td>${esc(r._alarm)}</td>
+        </tr>`);
+    });
+    
+    tb.innerHTML = rowsHtml.join('');
+    updatePagination();
+}
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+function badge(s){
+    const icons = {CRITICAL:'🔴', MAJOR:'🟠', MINOR:'🟡', NORMAL:'🟢', UNKNOWN:'⚪'};
+    return `<span class="badge ${s.toLowerCase()}">${icons[s] || '⚪'} ${s}</span>`;
+}
+function daysText(r){
+    if(!isFinite(r._days)) return '—';
+    if(r._days<=0) return 'SHORTAGE';
+    return r._days.toFixed(1)+' days';
+}
+function fmt(n){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+function filterByKPI(filterType) {
+    document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
+    
+    if (activeKpiFilter === filterType) {
+        activeKpiFilter = null;
+        $('alarmFilter').value = 'ALL';
+        $('search').value = '';
+        $('daysFilter').value = 'ALL';
+        $('dateFilter').value = '';
+        render();
+        return;
+    }
+    
+    activeKpiFilter = filterType;
+    document.querySelectorAll('.kpi').forEach(el => {
+        if (el.getAttribute('data-filter') === filterType) {
+            el.classList.add('active-filter');
+        }
+    });
+    
+    switch(filterType) {
+        case 'ALL':
+            $('alarmFilter').value = 'ALL';
+            $('search').value = '';
+            break;
+        case 'CRITICAL':
+        case 'MAJOR':
+        case 'MINOR':
+        case 'NORMAL':
+        case 'UNKNOWN':
+            $('alarmFilter').value = filterType;
+            $('search').value = '';
+            break;
+        case 'SHORTAGE':
+            $('alarmFilter').value = 'ALL';
+            $('search').value = '';
+            $('daysFilter').value = '0';
+            break;
+        default:
+            $('alarmFilter').value = 'ALL';
+            $('search').value = '';
+    }
+    render();
+}
+
+function resetFilters(){
+    ['search','dateFilter'].forEach(id => $(id).value='');
+    $('alarmFilter').value='ALL';
+    $('daysFilter').value='ALL';
+    $('sortBy').value='priority';
+    activeKpiFilter = null;
+    document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
+    currentPage = 1;
+    throttledRender();
+}
+
+function clearData(){
+    rows=[]; filtered=[];
+    $('fileStatus').textContent='No data loaded. Click "Upload Data" to begin.';
+    $('validationContainer').innerHTML='';
+    activeKpiFilter = null;
+    document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
+    updateConnectionStatus(false);
+    if (autoSyncInterval) {
+        clearInterval(autoSyncInterval);
+        autoSyncInterval = null;
+        isAutoSyncEnabled = false;
+        $('syncIndicator').style.display = 'none';
+    }
+    throttledRender();
+}
+
+function exportCSV(){
+    if(!filtered.length) return alert('No data to export.');
+    const out = filtered.map(r => ({
+        Priority: r._priority,
+        Alarm: r._status,
+        'Site ID': r._site,
+        Region: r._region,
+        State: r._state,
+        'Filled Date': isoDate(r._date),
+        Opening: r._opening,
+        Filled: r._filled,
+        Closing: r._closing,
+        'Consumption/day': r._cons,
+        'Consumed': r._consumed,
+        'Remaining Fuel': r._remaining,
+        'Days Remaining': isFinite(r._days) ? r._days : '',
+        'Estimated Shortage': isoDate(r._shortage),
+        'Original Alarm': r._alarm
+    }));
+    const ws=XLSX.utils.json_to_sheet(out);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Fuel Monitoring');
+    XLSX.writeFile(wb,`Fuel_Monitoring_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function loadDemo(){
+    const today = new Date();
+    const demoData = [
+        {'Site ID':'DEMO001','Date':today,'Opening':100,'Filled':200,'Closing':300,'DG RH/Day':8,'CPH':20,'Consumption/day':160,'Current Consumed':260,'Remaining Fuel':40,'Alarm':'Monitor','Operation Region':'North','State':'Kachin'},
+        {'Site ID':'DEMO002','Date':today,'Opening':100,'Filled':150,'Closing':250,'DG RH/Day':8,'CPH':18,'Consumption/day':144,'Current Consumed':280,'Remaining Fuel':-30,'Alarm':'Shortage','Operation Region':'South','State':'Mon'},
+        {'Site ID':'DEMO003','Date':today,'Opening':200,'Filled':250,'Closing':380,'DG RH/Day':6,'CPH':22,'Consumption/day':132,'Current Consumed':150,'Remaining Fuel':230,'Alarm':'Normal','Operation Region':'East','State':'Shan'},
+        {'Site ID':'DEMO004','Date':today,'Opening':50,'Filled':100,'Closing':80,'DG RH/Day':10,'CPH':25,'Consumption/day':250,'Current Consumed':70,'Remaining Fuel':10,'Alarm':'Warning','Operation Region':'West','State':'Rakhine'},
+        {'Site ID':'DEMO005','Date':today,'Opening':300,'Filled':350,'Closing':500,'DG RH/Day':5,'CPH':15,'Consumption/day':75,'Current Consumed':100,'Remaining Fuel':400,'Alarm':'Normal','Operation Region':'North','State':'Kachin'},
+    ];
+    processWithValidation(demoData);
+    updateConnectionStatus(true, 'Demo Data');
+}
+
+function updateConnectionStatus(connected, source = '') {
+    const status = $('connectionStatus');
+    const text = $('connectionText');
+    
+    if (connected) {
+        status.className = 'connection-status connected';
+        text.textContent = source || 'Connected';
+    } else {
+        status.className = 'connection-status disconnected';
+        text.textContent = 'No Data';
+    }
+}
+
+// ============================================================
+// CLOCK & INITIALIZATION
+// ============================================================
+setInterval(()=>{$('clock').textContent=new Date().toLocaleString()},1000);
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeUploadModal();
+});
+
+render();
+
+console.log('🚀 Fuel Monitoring Dashboard loaded');
+console.log('📤 Click "Upload Data" to load your fuel data');
+console.log('🔗 Google Sheets API Key:', GOOGLE_API_KEY === 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04' ? '⚠️ Not configured' : '✅ Configured');
+</script>
+</body>
+</html>
