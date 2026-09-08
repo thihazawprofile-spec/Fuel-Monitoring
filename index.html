@@ -41,7 +41,6 @@ input,select{border:1px solid #d7dce5;border-radius:9px;padding:10px;background:
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 
-/* ===== MODAL STYLES ===== */
 .modal-overlay{
     position:fixed;
     top:0;left:0;right:0;bottom:0;
@@ -220,7 +219,6 @@ input,select{border:1px solid #d7dce5;border-radius:9px;padding:10px;background:
     padding:0 4px;
 }
 
-/* KPI Cards */
 .kpis{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:12px;margin-bottom:16px}
 .kpi{padding:15px;cursor:pointer;transition:all 0.2s ease;position:relative;border-radius:14px;background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow)}
 .kpi:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(25,40,70,.15)}
@@ -267,6 +265,9 @@ tr:hover{background:#f8fafc}
 .trend-selector button{padding:4px 12px;font-size:11px;background:#f1f5f9;color:var(--text);border-radius:6px}
 .trend-selector button.active{background:var(--blue);color:white}
 .trend-filter-hint{font-size:11px;color:var(--muted);margin-left:8px}
+.progress-bar{height:6px;background:#e5e9f0;border-radius:3px;overflow:hidden;margin:8px 0}
+.progress-bar .fill{height:100%;background:var(--blue);transition:width 0.3s;border-radius:3px}
+.loading-text{font-size:13px;color:var(--muted)}
 
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(4,1fr)}.grid2{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}}
 @media(max-width:700px){
@@ -375,7 +376,7 @@ tr:hover{background:#f8fafc}
  <div class="card" style="margin-bottom:16px;">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
    <div>
-    <h2 style="margin:0;">📈 Historical Trends <span style="font-size:12px;color:var(--muted);font-weight:400;">(Responds to filters)</span></h2>
+    <h2 style="margin:0;">📈 Historical Trends <span style="font-size:12px;color:var(--muted);font-weight:400;">(Continuous daily consumption)</span></h2>
     <span class="trend-filter-hint" id="trendFilterHint">Showing: All data</span>
    </div>
    <div class="trend-selector">
@@ -391,7 +392,7 @@ tr:hover{background:#f8fafc}
     <div class="chartBox-sm"><canvas id="fuelTrendChart"></canvas></div>
    </div>
    <div class="card" style="box-shadow:none;border:1px solid var(--border);">
-    <h3 style="font-size:13px;margin:0 0 10px;">📉 Daily Consumption Trend</h3>
+    <h3 style="font-size:13px;margin:0 0 10px;">📉 Daily Total Consumption</h3>
     <div class="chartBox-sm"><canvas id="consumptionTrendChart"></canvas></div>
    </div>
    <div class="card" style="box-shadow:none;border:1px solid var(--border);">
@@ -558,7 +559,6 @@ let currentSheetId = '';
 let currentSheetName = '';
 let isRefreshing = false;
 let trendDays = 7;
-let historicalData = [];
 let allValidRows = [];
 
 const $=id=>document.getElementById(id);
@@ -580,7 +580,100 @@ function getLatestRecords(data) {
 }
 
 // ============================================================
-// HISTORICAL TRENDS FUNCTIONS - FILTER AWARE!
+// FETCH ALL DATA FROM GOOGLE SHEETS (PAGINATED)
+// ============================================================
+async function fetchAllGoogleSheetData(sheetId, sheetName, onProgress) {
+    const apiKey = GOOGLE_API_KEY;
+    const CHUNK_SIZE = 1000;
+    
+    const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?key=${apiKey}`;
+    let totalRows = 0;
+    
+    try {
+        const metaResponse = await fetch(metadataUrl);
+        if (!metaResponse.ok) throw new Error(`Metadata fetch failed: ${metaResponse.status}`);
+        const metaData = await metaResponse.json();
+        
+        const sheet = metaData.sheets.find(s => s.properties.title === sheetName);
+        if (!sheet) {
+            throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        totalRows = sheet.properties.gridProperties.rowCount || 0;
+        console.log(`📊 Total rows in sheet: ${totalRows}`);
+    } catch (error) {
+        console.warn('Could not get metadata, will fetch incrementally:', error);
+        totalRows = 10000;
+    }
+    
+    const MAX_ROWS = 50000;
+    const rowsToFetch = Math.min(totalRows, MAX_ROWS);
+    
+    if (rowsToFetch > 10000) {
+        onProgress && onProgress(`⚠️ Large sheet (${rowsToFetch} rows). This may take a moment...`);
+    }
+    
+    let allData = [];
+    let headers = [];
+    let totalFetched = 0;
+    
+    for (let startRow = 0; startRow < rowsToFetch; startRow += CHUNK_SIZE) {
+        const endRow = Math.min(startRow + CHUNK_SIZE, rowsToFetch);
+        const range = `${sheetName}!A${startRow + 1}:Z${endRow + 1}`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`;
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            const rows = result.values || [];
+            
+            if (rows.length === 0) break;
+            
+            if (startRow === 0 && rows.length > 0) {
+                headers = rows[0];
+            }
+            
+            const dataRows = startRow === 0 ? rows.slice(1) : rows;
+            allData = allData.concat(dataRows);
+            totalFetched += dataRows.length;
+            
+            const progress = Math.min(100, Math.round((totalFetched / rowsToFetch) * 100));
+            onProgress && onProgress(`📥 Loading ${totalFetched} rows... ${progress}%`);
+            
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('⏰ Request timed out. The sheet is very large. Try using CSV export instead.');
+            }
+            throw error;
+        }
+    }
+    
+    const result = allData.map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+            obj[header] = row[index] || '';
+        });
+        return obj;
+    });
+    
+    onProgress && onProgress(`✅ Loaded ${result.length} rows successfully!`);
+    return result;
+}
+
+// ============================================================
+// HISTORICAL TRENDS FUNCTIONS - FIXED WITH CONTINUOUS DAILY DATA
 // ============================================================
 
 function setTrendDays(days) {
@@ -589,45 +682,6 @@ function setTrendDays(days) {
         btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
     });
     drawHistoricalTrends();
-}
-
-function buildHistoricalData() {
-    // Use filtered data for trends - THIS IS THE KEY CHANGE!
-    const dataSource = filtered.length > 0 ? filtered : rows;
-    
-    if (dataSource.length === 0) {
-        historicalData = [];
-        return;
-    }
-    
-    const dateMap = {};
-    dataSource.forEach(r => {
-        if (r._date) {
-            const key = isoDate(r._date);
-            if (!dateMap[key]) {
-                dateMap[key] = { totalFuel: 0, totalConsumption: 0, count: 0, shortageCount: 0 };
-            }
-            dateMap[key].totalFuel += r._remaining;
-            dateMap[key].totalConsumption += r._cons;
-            dateMap[key].count++;
-            if (r._status === 'CRITICAL' || r._days <= 1) {
-                dateMap[key].shortageCount++;
-            }
-        }
-    });
-    
-    historicalData = Object.keys(dateMap)
-        .sort()
-        .map(key => ({
-            date: key,
-            avgFuel: dateMap[key].count > 0 ? dateMap[key].totalFuel / dateMap[key].count : 0,
-            totalConsumption: dateMap[key].totalConsumption,
-            siteCount: dateMap[key].count,
-            shortageCount: dateMap[key].shortageCount
-        }));
-    
-    // Update filter hint
-    updateTrendFilterHint();
 }
 
 function updateTrendFilterHint() {
@@ -648,7 +702,6 @@ function updateTrendFilterHint() {
 }
 
 function drawHistoricalTrends() {
-    // Use filtered data for trends
     const dataSource = filtered.length > 0 ? filtered : rows;
     
     if (dataSource.length === 0) {
@@ -675,36 +728,89 @@ function drawHistoricalTrends() {
         });
         return;
     }
-    
-    // Build historical data from filtered data
-    const dateMap = {};
+
+    // ===== FIX: Build continuous daily data =====
+    // Step 1: Group data by site and sort by date
+    const siteData = {};
     dataSource.forEach(r => {
-        if (r._date) {
-            const key = isoDate(r._date);
-            if (!dateMap[key]) {
-                dateMap[key] = { totalFuel: 0, totalConsumption: 0, count: 0, shortageCount: 0 };
-            }
-            dateMap[key].totalFuel += r._remaining;
-            dateMap[key].totalConsumption += r._cons;
-            dateMap[key].count++;
-            if (r._status === 'CRITICAL' || r._days <= 1) {
-                dateMap[key].shortageCount++;
-            }
-        }
+        if (!r._site || !r._date) return;
+        if (!siteData[r._site]) siteData[r._site] = [];
+        siteData[r._site].push(r);
     });
     
-    const historical = Object.keys(dateMap)
+    // Sort each site's records by date
+    Object.keys(siteData).forEach(site => {
+        siteData[site].sort((a, b) => a._date - b._date);
+    });
+    
+    // Step 2: Determine date range (last N days up to today)
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - trendDays);
+    
+    // Step 3: For each day, calculate daily data
+    const dailyData = {};
+    const currentDate = new Date(startDate);
+    
+    while (currentDate <= today) {
+        const dateKey = isoDate(currentDate);
+        dailyData[dateKey] = {
+            totalConsumption: 0,
+            activeSites: 0,
+            avgFuel: 0,
+            shortageCount: 0,
+            totalFuel: 0,
+            fuelValues: []
+        };
+        
+        // For each site, find the latest record ON or BEFORE this date
+        Object.keys(siteData).forEach(site => {
+            const records = siteData[site];
+            let latest = null;
+            
+            // Find the latest record with date <= currentDate
+            for (const record of records) {
+                if (record._date && record._date <= currentDate) {
+                    latest = record;
+                } else {
+                    break; // Records are sorted by date
+                }
+            }
+            
+            if (latest) {
+                dailyData[dateKey].totalConsumption += latest._cons || 0;
+                dailyData[dateKey].activeSites++;
+                dailyData[dateKey].totalFuel += latest._remaining || 0;
+                dailyData[dateKey].fuelValues.push(latest._remaining || 0);
+                if (latest._status === 'CRITICAL' || latest._days <= 1) {
+                    dailyData[dateKey].shortageCount++;
+                }
+            }
+        });
+        
+        // Calculate average fuel for this day
+        if (dailyData[dateKey].activeSites > 0) {
+            dailyData[dateKey].avgFuel = dailyData[dateKey].totalFuel / dailyData[dateKey].activeSites;
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Step 4: Convert to array for chart
+    const historical = Object.keys(dailyData)
         .sort()
         .map(key => ({
             date: key,
-            avgFuel: dateMap[key].count > 0 ? dateMap[key].totalFuel / dateMap[key].count : 0,
-            totalConsumption: dateMap[key].totalConsumption,
-            siteCount: dateMap[key].count,
-            shortageCount: dateMap[key].shortageCount
+            avgFuel: dailyData[key].avgFuel,
+            totalConsumption: dailyData[key].totalConsumption,
+            activeSites: dailyData[key].activeSites,
+            shortageCount: dailyData[key].shortageCount
         }));
     
-    const days = trendDays;
-    const data = historical.slice(-days);
+    // Remove leading days with no data
+    let firstDataIndex = historical.findIndex(d => d.activeSites > 0);
+    if (firstDataIndex === -1) firstDataIndex = 0;
+    const data = historical.slice(firstDataIndex);
     
     if (data.length < 2) {
         const labels = ['Insufficient Data'];
@@ -759,7 +865,7 @@ function drawHistoricalTrends() {
         }
     });
     
-    // Consumption Trend
+    // Consumption Trend - Shows CONTINUOUS daily consumption (carried over between fill dates)
     if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
     charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
         type: 'bar',
@@ -904,7 +1010,9 @@ async function manualRefresh() {
             refreshBtn.textContent = '⏳ Refreshing...';
             $('fileStatus').textContent = '🔄 Refreshing data from Google Sheets...';
             
-            const data = await fetchGoogleSheetData(currentSheetId, currentSheetName);
+            const data = await fetchAllGoogleSheetData(currentSheetId, currentSheetName, (msg) => {
+                $('fileStatus').textContent = msg;
+            });
             
             if (data && data.length > 0) {
                 processWithValidation(data);
@@ -960,9 +1068,13 @@ async function fetchFromGoogleSheets() {
     $('fetchSheetBtn').textContent = '⏳ Loading...';
     
     try {
-        $('googleStatusMessage').textContent = '⏳ Fetching data (limit: 500 rows)...';
+        const updateProgress = (msg) => {
+            $('googleStatusMessage').textContent = msg;
+        };
         
-        const data = await fetchGoogleSheetData(sheetId, sheetName);
+        $('googleStatusMessage').textContent = '📊 Fetching all data from Google Sheets...';
+        
+        const data = await fetchAllGoogleSheetData(sheetId, sheetName, updateProgress);
         
         if (data && data.length > 0) {
             $('googleStatusMessage').textContent = `⏳ Processing ${data.length} rows...`;
@@ -986,7 +1098,7 @@ async function fetchFromGoogleSheets() {
         
         let errorMsg = error.message;
         if (error.message.includes('timeout') || error.name === 'AbortError') {
-            errorMsg = '⏰ Request timed out. Try:\n• Use "Local File" upload\n• Reduce rows in your sheet\n• Check internet connection';
+            errorMsg = '⏰ Request timed out. Try:\n• Use "Local File" upload (CSV export from Google Sheets)\n• Reduce rows in your sheet\n• Check internet connection';
         } else if (error.message.includes('404')) {
             errorMsg = '❌ Sheet not found. Check:\n• Sheet ID is correct\n• Sheet name is correct\n• Sheet is shared publicly';
         } else if (error.message.includes('403')) {
@@ -1001,66 +1113,6 @@ async function fetchFromGoogleSheets() {
     } finally {
         $('fetchSheetBtn').disabled = false;
         $('fetchSheetBtn').textContent = '📥 Fetch Data';
-    }
-}
-
-async function fetchGoogleSheetData(sheetId, sheetName) {
-    const apiKey = GOOGLE_API_KEY;
-    
-    const range = `${sheetName}!A1:Z100000`;
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`;
-    
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const response = await fetch(url, { 
-            signal: controller.signal,
-            headers: { 'Accept': 'application/json' }
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            let errorMsg = `HTTP ${response.status}`;
-            try {
-                const errorData = await response.json();
-                errorMsg += `: ${errorData.error?.message || response.statusText}`;
-            } catch(e) {
-                errorMsg += `: ${response.statusText}`;
-            }
-            throw new Error(errorMsg);
-        }
-        
-        const result = await response.json();
-        const rows = result.values;
-        
-        if (!rows || rows.length < 2) {
-            return [];
-        }
-        
-        const headers = rows[0];
-        const data = rows.slice(1).map(row => {
-            const obj = {};
-            headers.forEach((header, index) => {
-                obj[header] = row[index] || '';
-            });
-            return obj;
-        });
-        
-        if (rows.length - 1 >= 500) {
-            $('googleStatusMessage').textContent = `⚠️ Loaded first 500 rows. Your sheet has more.`;
-        } else {
-            $('googleStatusMessage').textContent = `✅ Loaded ${data.length} rows from "${sheetName}"`;
-        }
-        
-        return data;
-        
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            throw new Error('Request timed out. Try using Local File upload instead.');
-        }
-        throw error;
     }
 }
 
@@ -1087,7 +1139,9 @@ function setupAutoSync(sheetId, sheetName) {
             if (spinner) spinner.style.display = 'inline-block';
             text.textContent = 'Syncing...';
             
-            const data = await fetchGoogleSheetData(sheetId, sheetName);
+            const data = await fetchAllGoogleSheetData(sheetId, sheetName, (msg) => {
+                $('fileStatus').textContent = msg;
+            });
             
             if (data && data.length > 0) {
                 processWithValidation(data);
@@ -1286,7 +1340,7 @@ $('search').addEventListener('input', function() {
     $(id).addEventListener('change', function() {
         activeKpiFilter = null;
         document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
-        render(); // Use render() directly so trends update with filters
+        render();
     });
 });
 
@@ -1390,7 +1444,6 @@ function render() {
     drawChartsOptimized();
     drawTableOptimized();
     
-    // Update historical trends with filtered data
     drawHistoricalTrends();
     updateTrendFilterHint();
 }
@@ -1588,7 +1641,6 @@ function clearData(){
     updateConnectionStatus(false);
     currentSheetId = '';
     currentSheetName = '';
-    historicalData = [];
     
     if (autoSyncInterval) {
         clearInterval(autoSyncInterval);
@@ -1696,10 +1748,10 @@ document.addEventListener('keydown', (e) => {
 render();
 
 console.log('🚀 Fuel Monitoring Dashboard loaded');
-console.log('📊 Historical Trends: ✅ FILTER AWARE - responds to all filters');
-console.log('🔍 Dashboard shows: ✅ Latest record per site only');
-console.log('📈 7/14/30/60 day trend analysis with filter support');
-console.log('🔗 Google Sheets API Key:', GOOGLE_API_KEY === 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04' ? '⚠️ Not configured' : '✅ Configured');
+console.log('📊 Historical Trends: ✅ FIXED - Continuous daily consumption');
+console.log('📈 Each day shows consumption carried forward until next fill date');
+console.log('📤 Click "Upload Data" to load your fuel data');
+console.log('🔄 Click "Refresh Data" for manual update');
 </script>
 </body>
 </html>
