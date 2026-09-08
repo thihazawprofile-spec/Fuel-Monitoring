@@ -266,6 +266,7 @@ tr:hover{background:#f8fafc}
 .trend-selector{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .trend-selector button{padding:4px 12px;font-size:11px;background:#f1f5f9;color:var(--text);border-radius:6px}
 .trend-selector button.active{background:var(--blue);color:white}
+.trend-filter-hint{font-size:11px;color:var(--muted);margin-left:8px}
 
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(4,1fr)}.grid2{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}}
 @media(max-width:700px){
@@ -373,7 +374,10 @@ tr:hover{background:#f8fafc}
  <!-- ===== HISTORICAL TRENDS SECTION ===== -->
  <div class="card" style="margin-bottom:16px;">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-   <h2 style="margin:0;">📈 Historical Trends <span style="font-size:12px;color:var(--muted);font-weight:400;">(All historical data used for trends)</span></h2>
+   <div>
+    <h2 style="margin:0;">📈 Historical Trends <span style="font-size:12px;color:var(--muted);font-weight:400;">(Responds to filters)</span></h2>
+    <span class="trend-filter-hint" id="trendFilterHint">Showing: All data</span>
+   </div>
    <div class="trend-selector">
     <button class="active" data-days="7" onclick="setTrendDays(7)">7 Days</button>
     <button data-days="14" onclick="setTrendDays(14)">14 Days</button>
@@ -554,8 +558,8 @@ let currentSheetId = '';
 let currentSheetName = '';
 let isRefreshing = false;
 let trendDays = 7;
-let historicalData = []; // ALL data for trends
-let allValidRows = []; // All processed data
+let historicalData = [];
+let allValidRows = [];
 
 const $=id=>document.getElementById(id);
 const num=v=>{if(v===null||v===undefined||v==="")return 0; const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(n)?0:n};
@@ -568,7 +572,6 @@ function getLatestRecords(data) {
     data.forEach(r => {
         const siteId = r._site;
         if (!siteId) return;
-        // Compare dates, keep the latest
         if (!latestMap[siteId] || (r._date && r._date > latestMap[siteId]._date)) {
             latestMap[siteId] = r;
         }
@@ -577,7 +580,7 @@ function getLatestRecords(data) {
 }
 
 // ============================================================
-// HISTORICAL TRENDS FUNCTIONS
+// HISTORICAL TRENDS FUNCTIONS - FILTER AWARE!
 // ============================================================
 
 function setTrendDays(days) {
@@ -589,9 +592,16 @@ function setTrendDays(days) {
 }
 
 function buildHistoricalData() {
-    // Group all data by date (including duplicates - this is for trends)
+    // Use filtered data for trends - THIS IS THE KEY CHANGE!
+    const dataSource = filtered.length > 0 ? filtered : rows;
+    
+    if (dataSource.length === 0) {
+        historicalData = [];
+        return;
+    }
+    
     const dateMap = {};
-    allValidRows.forEach(r => {
+    dataSource.forEach(r => {
         if (r._date) {
             const key = isoDate(r._date);
             if (!dateMap[key]) {
@@ -615,36 +625,107 @@ function buildHistoricalData() {
             siteCount: dateMap[key].count,
             shortageCount: dateMap[key].shortageCount
         }));
+    
+    // Update filter hint
+    updateTrendFilterHint();
+}
+
+function updateTrendFilterHint() {
+    const hint = $('trendFilterHint');
+    const hasFilters = $('search').value.trim() !== '' || 
+                      $('alarmFilter').value !== 'ALL' || 
+                      $('daysFilter').value !== 'ALL' || 
+                      $('dateFilter').value !== '';
+    
+    if (hasFilters) {
+        const count = filtered.length;
+        hint.textContent = `🔍 Filtered: ${count} sites showing in trends`;
+        hint.style.color = '#2563eb';
+    } else {
+        hint.textContent = 'Showing: All data';
+        hint.style.color = 'var(--muted)';
+    }
 }
 
 function drawHistoricalTrends() {
-    if (historicalData.length === 0) {
-        buildHistoricalData();
-    }
+    // Use filtered data for trends
+    const dataSource = filtered.length > 0 ? filtered : rows;
     
-    const days = trendDays;
-    const data = historicalData.slice(-days);
-    
-    if (data.length < 2) {
-        const labels = ['No Historical Data'];
+    if (dataSource.length === 0) {
+        const labels = ['No Data'];
         const emptyData = [0];
         
         if (charts.fuelTrend) { charts.fuelTrend.destroy(); }
         charts.fuelTrend = new Chart($('fuelTrendChart'), {
             type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Avg Fuel (L)', data: emptyData, borderColor: '#2563eb' }] },
+            data: { labels: labels, datasets: [{ label: 'No Data', data: emptyData, borderColor: '#999' }] },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
         if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
         charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
             type: 'bar',
-            data: { labels: labels, datasets: [{ label: 'Consumption (L)', data: emptyData, backgroundColor: '#ea580c' }] },
+            data: { labels: labels, datasets: [{ label: 'No Data', data: emptyData, backgroundColor: '#999' }] },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
         if (charts.shortageTrend) { charts.shortageTrend.destroy(); }
         charts.shortageTrend = new Chart($('shortageTrendChart'), {
             type: 'bar',
-            data: { labels: labels, datasets: [{ label: 'Sites at Risk', data: emptyData, backgroundColor: '#dc2626' }] },
+            data: { labels: labels, datasets: [{ label: 'No Data', data: emptyData, backgroundColor: '#999' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        return;
+    }
+    
+    // Build historical data from filtered data
+    const dateMap = {};
+    dataSource.forEach(r => {
+        if (r._date) {
+            const key = isoDate(r._date);
+            if (!dateMap[key]) {
+                dateMap[key] = { totalFuel: 0, totalConsumption: 0, count: 0, shortageCount: 0 };
+            }
+            dateMap[key].totalFuel += r._remaining;
+            dateMap[key].totalConsumption += r._cons;
+            dateMap[key].count++;
+            if (r._status === 'CRITICAL' || r._days <= 1) {
+                dateMap[key].shortageCount++;
+            }
+        }
+    });
+    
+    const historical = Object.keys(dateMap)
+        .sort()
+        .map(key => ({
+            date: key,
+            avgFuel: dateMap[key].count > 0 ? dateMap[key].totalFuel / dateMap[key].count : 0,
+            totalConsumption: dateMap[key].totalConsumption,
+            siteCount: dateMap[key].count,
+            shortageCount: dateMap[key].shortageCount
+        }));
+    
+    const days = trendDays;
+    const data = historical.slice(-days);
+    
+    if (data.length < 2) {
+        const labels = ['Insufficient Data'];
+        const emptyData = [0];
+        
+        if (charts.fuelTrend) { charts.fuelTrend.destroy(); }
+        charts.fuelTrend = new Chart($('fuelTrendChart'), {
+            type: 'line',
+            data: { labels: labels, datasets: [{ label: 'Insufficient Data', data: emptyData, borderColor: '#999' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
+        charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Insufficient Data', data: emptyData, backgroundColor: '#999' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        if (charts.shortageTrend) { charts.shortageTrend.destroy(); }
+        charts.shortageTrend = new Chart($('shortageTrendChart'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Insufficient Data', data: emptyData, backgroundColor: '#999' }] },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
         return;
@@ -655,6 +736,7 @@ function drawHistoricalTrends() {
     const consumptionData = data.map(d => Math.round(d.totalConsumption));
     const shortageData = data.map(d => d.shortageCount);
     
+    // Fuel Level Trend
     if (charts.fuelTrend) { charts.fuelTrend.destroy(); }
     charts.fuelTrend = new Chart($('fuelTrendChart'), {
         type: 'line',
@@ -677,6 +759,7 @@ function drawHistoricalTrends() {
         }
     });
     
+    // Consumption Trend
     if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
     charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
         type: 'bar',
@@ -696,6 +779,7 @@ function drawHistoricalTrends() {
         }
     });
     
+    // Shortage Trend
     if (charts.shortageTrend) { charts.shortageTrend.destroy(); }
     charts.shortageTrend = new Chart($('shortageTrendChart'), {
         type: 'bar',
@@ -1031,7 +1115,7 @@ function setupAutoSync(sheetId, sheetName) {
                 }
             }, 3000);
         }
-    }, 600000); // 10 minutes
+    }, 600000);
 }
 
 // ============================================================
@@ -1086,22 +1170,9 @@ function processWithValidation(data) {
     
     showValidationSummary(validRows.length, errorRows, validationResults);
     
-    // ===== KEY CHANGE: Store ALL valid rows for history, show only LATEST for dashboard =====
-    allValidRows = validRows; // Keep ALL for trends
-    
-    // Get only the latest record per site for the main display
+    allValidRows = validRows;
     const latestRecords = getLatestRecords(validRows);
-    rows = latestRecords; // Show only latest records
-    
-    // Build historical data for trends
-    buildHistoricalData();
-    drawHistoricalTrends();
-    
-    $('fileStatus').textContent = `✅ ${rows.length.toLocaleString()} unique sites (latest records). ${validRows.length} total historical records.`;
-    
-    if (errorRows.length > 0) {
-        console.warn('Skipped rows with errors:', errorRows);
-    }
+    rows = latestRecords;
     
     render();
 }
@@ -1202,7 +1273,7 @@ function calc(r){
 }
 
 // ============================================================
-// EVENT LISTENERS - INSTANT SEARCH & FILTERS
+// EVENT LISTENERS
 // ============================================================
 
 $('search').addEventListener('input', function() {
@@ -1215,7 +1286,7 @@ $('search').addEventListener('input', function() {
     $(id).addEventListener('change', function() {
         activeKpiFilter = null;
         document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
-        throttledRender();
+        render(); // Use render() directly so trends update with filters
     });
 });
 
@@ -1318,6 +1389,10 @@ function render() {
     updateKPIs();
     drawChartsOptimized();
     drawTableOptimized();
+    
+    // Update historical trends with filtered data
+    drawHistoricalTrends();
+    updateTrendFilterHint();
 }
 
 function updateKPIs(){
@@ -1501,7 +1576,7 @@ function resetFilters(){
     activeKpiFilter = null;
     document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
     currentPage = 1;
-    throttledRender();
+    render();
 }
 
 function clearData(){
@@ -1526,7 +1601,7 @@ function clearData(){
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
     });
     
-    throttledRender();
+    render();
 }
 
 function exportCSV(){
@@ -1564,7 +1639,6 @@ function loadDemo(){
     const states = ['Kachin','Mon','Shan','Rakhine','Yangon','Bago'];
     const apms = ['M2','M3','M5'];
     
-    // Generate 30 days of historical data (including duplicates for demo)
     for (let d = 0; d < 30; d++) {
         const date = new Date(today);
         date.setDate(date.getDate() - (29 - d));
@@ -1622,12 +1696,10 @@ document.addEventListener('keydown', (e) => {
 render();
 
 console.log('🚀 Fuel Monitoring Dashboard loaded');
-console.log('📊 Historical Trends: ✅ Enabled (using ALL data)');
+console.log('📊 Historical Trends: ✅ FILTER AWARE - responds to all filters');
 console.log('🔍 Dashboard shows: ✅ Latest record per site only');
-console.log('📈 7/14/30/60 day trend analysis available');
-console.log('📤 Click "Upload Data" to load your fuel data');
+console.log('📈 7/14/30/60 day trend analysis with filter support');
 console.log('🔗 Google Sheets API Key:', GOOGLE_API_KEY === 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04' ? '⚠️ Not configured' : '✅ Configured');
-console.log('🔄 Click "Refresh Data" for manual update');
 </script>
 </body>
 </html>
