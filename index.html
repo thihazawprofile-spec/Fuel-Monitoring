@@ -19,6 +19,9 @@ button,.fileLabel{border:0;border-radius:9px;padding:10px 14px;cursor:pointer;fo
 button:hover,.fileLabel:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
 button:disabled{opacity:0.5;cursor:not-allowed;transform:none}
 button.primary{background:var(--blue);color:white}
+button.refresh-btn{background:#16a34a;color:white}
+button.refresh-btn:hover{background:#15803d}
+button.refresh-btn:disabled{background:#86b886}
 button.google-btn{background:#4285f4;color:white}
 button.google-btn:hover{background:#357ae8}
 button.google-btn.connected{background:#34a853}
@@ -295,6 +298,9 @@ tr:hover{background:#f8fafc}
    <button class="primary" onclick="openUploadModal()">
     📤 Upload Data
    </button>
+   <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">
+    🔄 Refresh Data
+   </button>
    <button onclick="loadDemo()">Load Demo</button>
    <button onclick="exportCSV()">Export Current View</button>
    <button onclick="clearData()" style="background:#fee2e2;color:#991b1b">Clear</button>
@@ -303,7 +309,7 @@ tr:hover{background:#f8fafc}
  </div>
 
  <div class="toolbar">
-   <input id="search" class="search" placeholder="🔎 Search Site ID, Region, State, Alarm...">
+   <input id="search" class="search" placeholder="🔎 Instant Search - Site ID, Region, State, Alarm...">
    <select id="alarmFilter"><option value="ALL">All Alarm Status</option><option value="CRITICAL">Critical</option><option value="MAJOR">Major</option><option value="MINOR">Minor</option><option value="NORMAL">Normal</option><option value="UNKNOWN">Unknown</option></select>
    <select id="daysFilter"><option value="ALL">All Days Remaining</option><option value="0">Shortage / ≤ 0 day</option><option value="1">≤ 1 day</option><option value="3">≤ 3 days</option><option value="7">≤ 7 days</option><option value="14">≤ 14 days</option></select>
    <input id="dateFilter" type="date" title="Filled date from">
@@ -422,7 +428,7 @@ tr:hover{background:#f8fafc}
    </div>
   </div>
  </div>
- <footer>Fuel Monitoring Dashboard • Data from local files or Google Sheets • Auto-refresh available</footer>
+ <footer>Fuel Monitoring Dashboard • Data from local files or Google Sheets • 🔄 Auto-sync every 30s • Click Refresh for manual update</footer>
 </div>
 
 <!-- ===== UPLOAD MODAL ===== -->
@@ -514,6 +520,9 @@ let selectedFile = null;
 let googleSheetData = null;
 let autoSyncInterval = null;
 let isAutoSyncEnabled = false;
+let currentSheetId = '';
+let currentSheetName = '';
+let isRefreshing = false;
 
 const $=id=>document.getElementById(id);
 const num=v=>{if(v===null||v===undefined||v==="")return 0; const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(n)?0:n};
@@ -592,6 +601,9 @@ function uploadSelectedFile() {
             closeUploadModal();
             $('fileStatus').textContent = `✅ Loaded ${data.length} rows from "${selectedFile.name}"`;
             updateConnectionStatus(true, 'Local File');
+            // Clear sheet ID so refresh won't try to reload from Google Sheets
+            currentSheetId = '';
+            currentSheetName = '';
         } catch(err) {
             $('fileStatus').textContent = '❌ Could not read file: ' + err.message;
             alert('Error reading file: ' + err.message);
@@ -602,6 +614,56 @@ function uploadSelectedFile() {
         reader.readAsText(selectedFile);
     } else {
         reader.readAsArrayBuffer(selectedFile);
+    }
+}
+
+// ============================================================
+// MANUAL REFRESH BUTTON
+// ============================================================
+async function manualRefresh() {
+    const refreshBtn = $('refreshBtn');
+    
+    if (isRefreshing) return;
+    
+    // If we have Google Sheets data source
+    if (currentSheetId && currentSheetName) {
+        try {
+            isRefreshing = true;
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '⏳ Refreshing...';
+            $('fileStatus').textContent = '🔄 Refreshing data from Google Sheets...';
+            
+            const data = await fetchGoogleSheetData(currentSheetId, currentSheetName);
+            
+            if (data && data.length > 0) {
+                processWithValidation(data);
+                $('fileStatus').textContent = `✅ Refreshed at ${new Date().toLocaleTimeString()} - ${data.length} rows loaded`;
+                updateConnectionStatus(true, 'Google Sheets');
+            } else {
+                $('fileStatus').textContent = '⚠️ No data found during refresh.';
+            }
+        } catch (error) {
+            console.error('Refresh error:', error);
+            $('fileStatus').textContent = `❌ Refresh failed: ${error.message}`;
+        } finally {
+            isRefreshing = false;
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = '🔄 Refresh Data';
+        }
+    } else if (rows.length > 0) {
+        // If we have local data, just re-render
+        $('fileStatus').textContent = `🔄 Re-rendered at ${new Date().toLocaleTimeString()} - ${rows.length} rows`;
+        render();
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = '🔄 Refresh Data';
+        }, 1000);
+    } else {
+        $('fileStatus').textContent = '⚠️ No data to refresh. Upload data first.';
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = '🔄 Refresh Data';
+        }, 2000);
     }
 }
 
@@ -618,6 +680,10 @@ async function fetchFromGoogleSheets() {
         $('googleStatusMessage').style.color = '#92400e';
         return;
     }
+    
+    // Store for refresh
+    currentSheetId = sheetId;
+    currentSheetName = sheetName;
     
     $('googleStatusMessage').textContent = '⏳ Connecting to Google Sheets...';
     $('googleStatusMessage').style.color = '#2563eb';
@@ -640,7 +706,7 @@ async function fetchFromGoogleSheets() {
             
             if (autoSync) {
                 setupAutoSync(sheetId, sheetName);
-                $('fileStatus').textContent += ' 🔄 Auto-sync enabled (10 mins)';
+                $('fileStatus').textContent += ' 🔄 Auto-sync enabled (30s)';
             }
         } else {
             $('googleStatusMessage').textContent = '⚠️ No data found. Check the sheet name and content.';
@@ -758,7 +824,7 @@ function setupAutoSync(sheetId, sheetName) {
             console.warn('Auto-sync failed:', error);
             $('syncIndicator').querySelector('span:last-child').textContent = 'Sync error';
         }
-    }, 30000);
+    }, 30000); // 30 seconds
 }
 
 // ============================================================
@@ -896,11 +962,7 @@ function calc(r){
     const opening=num(val(r,['Opening','Opening Fuel']));
     const filled=num(val(r,['Filled','Fuel Filled','Filled Qty','Fuel Fill']));
     const closing=num(val(r,['Closing','Closing Fuel']));
-    
-    // ADD APM
     const apm=val(r,['APM','Apm']);
-    
-    // DG RH/Day
     const dg=num(val(r,['DG RH/Day','DG RH Day','DG RH','DG Running Hours/Day']));
     const cph=num(val(r,['CPH','Consumption Per Hour','L/H']));
     const consRaw=num(val(r,['Consumption/day','Consumption Day','Daily Consumption','Consumption per day']));
@@ -923,6 +985,26 @@ function calc(r){
 }
 
 // ============================================================
+// EVENT LISTENERS - INSTANT SEARCH & FILTERS
+// ============================================================
+
+// SEARCH - INSTANT (no delay)
+$('search').addEventListener('input', function() {
+    activeKpiFilter = null;
+    document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
+    render(); // Instant!
+});
+
+// Other filters - also instant but with throttled rendering for performance
+['alarmFilter','daysFilter','dateFilter','sortBy'].forEach(id => {
+    $(id).addEventListener('change', function() {
+        activeKpiFilter = null;
+        document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
+        throttledRender();
+    });
+});
+
+// ============================================================
 // RENDER FUNCTIONS
 // ============================================================
 let renderTimeout;
@@ -936,7 +1018,7 @@ function throttledRender() {
         const renderTime = (endTime - renderStartTime).toFixed(2);
         const perfStats = $('perfStats');
         perfStats.textContent = `⚡ Render: ${renderTime}ms • ${filtered.length} rows`;
-    }, 100);
+    }, 50); // Faster response
 }
 
 function getPageData() {
@@ -1214,6 +1296,8 @@ function clearData(){
     activeKpiFilter = null;
     document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
     updateConnectionStatus(false);
+    currentSheetId = '';
+    currentSheetName = '';
     if (autoSyncInterval) {
         clearInterval(autoSyncInterval);
         autoSyncInterval = null;
@@ -1261,6 +1345,8 @@ function loadDemo(){
     ];
     processWithValidation(demoData);
     updateConnectionStatus(true, 'Demo Data');
+    currentSheetId = '';
+    currentSheetName = '';
 }
 
 function updateConnectionStatus(connected, source = '') {
@@ -1290,6 +1376,8 @@ render();
 console.log('🚀 Fuel Monitoring Dashboard loaded');
 console.log('📤 Click "Upload Data" to load your fuel data');
 console.log('🔗 Google Sheets API Key:', GOOGLE_API_KEY === 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04' ? '⚠️ Not configured' : '✅ Configured');
+console.log('🔄 Click "Refresh Data" for manual update');
+console.log('🔍 Search is now INSTANT - no delay!');
 </script>
 </body>
 </html>
