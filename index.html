@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
-:root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#697586;--border:#e5e9f0;--shadow:0 4px 18px rgba(25,40,70,.08);--blue:#2563eb;--red:#dc2626;--orange:#ea580c;--yellow:#ca8a04;--green:#16a34a}
+:root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#697586;--border:#e5e9f0;--shadow:0 4px 18px rgba(25,40,70,.08);--blue:#2563eb;--red:#dc2626;--orange:#ea580c;--yellow:#ca8a04;--green:#16a34a;--purple:#7c3aed}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
 header{background:linear-gradient(135deg,#132238,#1e3a5f);color:#fff;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
 header h1{margin:0;font-size:24px}header p{margin:5px 0 0;color:#cbd5e1;font-size:13px}
@@ -250,8 +250,9 @@ input,select{border:1px solid #d7dce5;border-radius:9px;padding:10px;background:
 
 .performance-stats{font-size:11px;color:var(--muted);display:flex;gap:16px;align-items:center}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
 .card{padding:16px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
-.card h2{font-size:16px;margin:0 0 14px}.chartBox{height:290px}
+.card h2{font-size:16px;margin:0 0 14px}.chartBox{height:280px}.chartBox-sm{height:200px}
 .tableCard{overflow:hidden}.tableTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:12px}
 .tableWrap{overflow:auto;max-height:560px;border:1px solid var(--border);border-radius:10px}
 table{width:100%;border-collapse:collapse;font-size:11px;min-width:1500px}
@@ -262,8 +263,11 @@ tr:hover{background:#f8fafc}
 .critical{background:#fee2e2;color:#991b1b}.major{background:#ffedd5;color:#9a3412}.minor{background:#fef3c7;color:#854d0e}.normal{background:#dcfce7;color:#166534}.unknown{background:#e5e7eb;color:#374151}
 .daysCritical{color:var(--red);font-weight:800}.daysMajor{color:var(--orange);font-weight:800}.daysMinor{color:var(--yellow);font-weight:800}.daysNormal{color:var(--green);font-weight:800}
 .empty{text-align:center;padding:50px;color:var(--muted)}footer{text-align:center;color:#8a94a6;font-size:11px;padding:18px}
+.trend-selector{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.trend-selector button{padding:4px 12px;font-size:11px;background:#f1f5f9;color:var(--text);border-radius:6px}
+.trend-selector button.active{background:var(--blue);color:white}
 
-@media(max-width:1100px){.kpis{grid-template-columns:repeat(4,1fr)}.grid2{grid-template-columns:1fr}}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(4,1fr)}.grid2{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}}
 @media(max-width:700px){
     .kpis{grid-template-columns:repeat(2,1fr)}
     header{padding:18px}
@@ -287,7 +291,7 @@ tr:hover{background:#f8fafc}
   </div>
   <span class="sync-indicator" id="syncIndicator" style="display:none;">
    <span class="spinner"></span>
-   <span>Syncing...</span>
+   <span>Auto-sync (10m)</span>
   </span>
   <div id="clock">—</div>
  </div>
@@ -322,7 +326,7 @@ tr:hover{background:#f8fafc}
   <div class="kpi" data-filter="ALL" onclick="filterByKPI('ALL')">
    <div class="label">📊 TOTAL SITES</div>
    <div class="value" id="kTotal">0</div>
-   <div class="sub">Loaded records</div>
+   <div class="sub">Current sites</div>
    <span class="click-hint">↗ Click to view all</span>
   </div>
   <div class="kpi" data-filter="CRITICAL" onclick="filterByKPI('CRITICAL')">
@@ -353,7 +357,7 @@ tr:hover{background:#f8fafc}
   <div class="kpi" onclick="filterByKPI('UNKNOWN')">
    <div class="label">⛽ REMAINING</div>
    <div class="value" id="kFuel">0</div>
-   <div class="sub">Estimated litres</div>
+   <div class="sub">Total litres (current)</div>
    <span class="click-hint">↗ Click to view</span>
   </div>
   <div class="kpi" onclick="filterByKPI('SHORTAGE')">
@@ -365,6 +369,33 @@ tr:hover{background:#f8fafc}
  </div>
 
  <div id="validationContainer"></div>
+
+ <!-- ===== HISTORICAL TRENDS SECTION ===== -->
+ <div class="card" style="margin-bottom:16px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+   <h2 style="margin:0;">📈 Historical Trends <span style="font-size:12px;color:var(--muted);font-weight:400;">(All historical data used for trends)</span></h2>
+   <div class="trend-selector">
+    <button class="active" data-days="7" onclick="setTrendDays(7)">7 Days</button>
+    <button data-days="14" onclick="setTrendDays(14)">14 Days</button>
+    <button data-days="30" onclick="setTrendDays(30)">30 Days</button>
+    <button data-days="60" onclick="setTrendDays(60)">60 Days</button>
+   </div>
+  </div>
+  <div class="grid3" style="margin-top:10px;">
+   <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+    <h3 style="font-size:13px;margin:0 0 10px;">📊 Average Fuel Level</h3>
+    <div class="chartBox-sm"><canvas id="fuelTrendChart"></canvas></div>
+   </div>
+   <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+    <h3 style="font-size:13px;margin:0 0 10px;">📉 Daily Consumption Trend</h3>
+    <div class="chartBox-sm"><canvas id="consumptionTrendChart"></canvas></div>
+   </div>
+   <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+    <h3 style="font-size:13px;margin:0 0 10px;">⚠️ Sites Predicted to Run Out</h3>
+    <div class="chartBox-sm"><canvas id="shortageTrendChart"></canvas></div>
+   </div>
+  </div>
+ </div>
 
  <div class="grid2">
   <div class="card"><h2>Alarm Distribution</h2><div class="chartBox"><canvas id="alarmChart"></canvas></div></div>
@@ -379,7 +410,7 @@ tr:hover{background:#f8fafc}
  <div class="card tableCard">
   <div class="tableTop">
    <div>
-    <h2 style="margin:0">🚨 Fuel Delivery Priority</h2>
+    <h2 style="margin:0">🚨 Fuel Delivery Priority <span style="font-size:12px;color:var(--muted);font-weight:400;">(Latest record only)</span></h2>
     <span class="status" id="tableStatus">0 sites</span>
    </div>
    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -428,7 +459,7 @@ tr:hover{background:#f8fafc}
    </div>
   </div>
  </div>
- <footer>Fuel Monitoring Dashboard • Data from local files or Google Sheets • 🔄 Auto-sync every 30s • Click Refresh for manual update</footer>
+ <footer>Fuel Monitoring Dashboard • Data from Google Sheets • 🔄 Auto-sync every 10 minutes • Click Refresh for manual update</footer>
 </div>
 
 <!-- ===== UPLOAD MODAL ===== -->
@@ -484,7 +515,7 @@ tr:hover{background:#f8fafc}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
      <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:13px;cursor:pointer;">
       <input type="checkbox" id="autoSyncCheck" checked>
-      🔄 Auto-sync every 30 seconds
+      🔄 Auto-sync every 10 minutes
      </label>
     </div>
 
@@ -517,15 +548,173 @@ let activeKpiFilter = null;
 let renderStartTime = 0;
 let selectedOption = null;
 let selectedFile = null;
-let googleSheetData = null;
 let autoSyncInterval = null;
 let isAutoSyncEnabled = false;
 let currentSheetId = '';
 let currentSheetName = '';
 let isRefreshing = false;
+let trendDays = 7;
+let historicalData = []; // ALL data for trends
+let allValidRows = []; // All processed data
 
 const $=id=>document.getElementById(id);
 const num=v=>{if(v===null||v===undefined||v==="")return 0; const n=parseFloat(String(v).replace(/,/g,'')); return isNaN(n)?0:n};
+
+// ============================================================
+// DEDUPLICATION FUNCTION - Show Latest Record Per Site
+// ============================================================
+function getLatestRecords(data) {
+    const latestMap = {};
+    data.forEach(r => {
+        const siteId = r._site;
+        if (!siteId) return;
+        // Compare dates, keep the latest
+        if (!latestMap[siteId] || (r._date && r._date > latestMap[siteId]._date)) {
+            latestMap[siteId] = r;
+        }
+    });
+    return Object.values(latestMap);
+}
+
+// ============================================================
+// HISTORICAL TRENDS FUNCTIONS
+// ============================================================
+
+function setTrendDays(days) {
+    trendDays = days;
+    document.querySelectorAll('.trend-selector button').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+    });
+    drawHistoricalTrends();
+}
+
+function buildHistoricalData() {
+    // Group all data by date (including duplicates - this is for trends)
+    const dateMap = {};
+    allValidRows.forEach(r => {
+        if (r._date) {
+            const key = isoDate(r._date);
+            if (!dateMap[key]) {
+                dateMap[key] = { totalFuel: 0, totalConsumption: 0, count: 0, shortageCount: 0 };
+            }
+            dateMap[key].totalFuel += r._remaining;
+            dateMap[key].totalConsumption += r._cons;
+            dateMap[key].count++;
+            if (r._status === 'CRITICAL' || r._days <= 1) {
+                dateMap[key].shortageCount++;
+            }
+        }
+    });
+    
+    historicalData = Object.keys(dateMap)
+        .sort()
+        .map(key => ({
+            date: key,
+            avgFuel: dateMap[key].count > 0 ? dateMap[key].totalFuel / dateMap[key].count : 0,
+            totalConsumption: dateMap[key].totalConsumption,
+            siteCount: dateMap[key].count,
+            shortageCount: dateMap[key].shortageCount
+        }));
+}
+
+function drawHistoricalTrends() {
+    if (historicalData.length === 0) {
+        buildHistoricalData();
+    }
+    
+    const days = trendDays;
+    const data = historicalData.slice(-days);
+    
+    if (data.length < 2) {
+        const labels = ['No Historical Data'];
+        const emptyData = [0];
+        
+        if (charts.fuelTrend) { charts.fuelTrend.destroy(); }
+        charts.fuelTrend = new Chart($('fuelTrendChart'), {
+            type: 'line',
+            data: { labels: labels, datasets: [{ label: 'Avg Fuel (L)', data: emptyData, borderColor: '#2563eb' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
+        charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Consumption (L)', data: emptyData, backgroundColor: '#ea580c' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        if (charts.shortageTrend) { charts.shortageTrend.destroy(); }
+        charts.shortageTrend = new Chart($('shortageTrendChart'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Sites at Risk', data: emptyData, backgroundColor: '#dc2626' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        return;
+    }
+    
+    const labels = data.map(d => d.date);
+    const fuelData = data.map(d => Math.round(d.avgFuel));
+    const consumptionData = data.map(d => Math.round(d.totalConsumption));
+    const shortageData = data.map(d => d.shortageCount);
+    
+    if (charts.fuelTrend) { charts.fuelTrend.destroy(); }
+    charts.fuelTrend = new Chart($('fuelTrendChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Avg Fuel (L)',
+                data: fuelData,
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37,99,235,0.1)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+    
+    if (charts.consumptionTrend) { charts.consumptionTrend.destroy(); }
+    charts.consumptionTrend = new Chart($('consumptionTrendChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Total Consumption (L)',
+                data: consumptionData,
+                backgroundColor: '#ea580c'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+    
+    if (charts.shortageTrend) { charts.shortageTrend.destroy(); }
+    charts.shortageTrend = new Chart($('shortageTrendChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Sites Predicted to Run Out',
+                data: shortageData,
+                backgroundColor: '#dc2626'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+}
 
 // ============================================================
 // MODAL FUNCTIONS
@@ -601,7 +790,6 @@ function uploadSelectedFile() {
             closeUploadModal();
             $('fileStatus').textContent = `✅ Loaded ${data.length} rows from "${selectedFile.name}"`;
             updateConnectionStatus(true, 'Local File');
-            // Clear sheet ID so refresh won't try to reload from Google Sheets
             currentSheetId = '';
             currentSheetName = '';
         } catch(err) {
@@ -625,7 +813,6 @@ async function manualRefresh() {
     
     if (isRefreshing) return;
     
-    // If we have Google Sheets data source
     if (currentSheetId && currentSheetName) {
         try {
             isRefreshing = true;
@@ -651,7 +838,6 @@ async function manualRefresh() {
             refreshBtn.textContent = '🔄 Refresh Data';
         }
     } else if (rows.length > 0) {
-        // If we have local data, just re-render
         $('fileStatus').textContent = `🔄 Re-rendered at ${new Date().toLocaleTimeString()} - ${rows.length} rows`;
         render();
         setTimeout(() => {
@@ -668,7 +854,7 @@ async function manualRefresh() {
 }
 
 // ============================================================
-// GOOGLE SHEETS FUNCTIONS (FIXED)
+// GOOGLE SHEETS FUNCTIONS
 // ============================================================
 async function fetchFromGoogleSheets() {
     const sheetId = $('spreadsheetIdInput').value.trim();
@@ -681,7 +867,6 @@ async function fetchFromGoogleSheets() {
         return;
     }
     
-    // Store for refresh
     currentSheetId = sheetId;
     currentSheetName = sheetName;
     
@@ -706,7 +891,7 @@ async function fetchFromGoogleSheets() {
             
             if (autoSync) {
                 setupAutoSync(sheetId, sheetName);
-                $('fileStatus').textContent += ' 🔄 Auto-sync enabled (30s)';
+                $('fileStatus').textContent += ' 🔄 Auto-sync enabled (10 mins)';
             }
         } else {
             $('googleStatusMessage').textContent = '⚠️ No data found. Check the sheet name and content.';
@@ -738,12 +923,10 @@ async function fetchFromGoogleSheets() {
 async function fetchGoogleSheetData(sheetId, sheetName) {
     const apiKey = GOOGLE_API_KEY;
     
-    // Fetch only first 500 rows to prevent timeout
     const range = `${sheetName}!A1:Z501`;
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`;
     
     try {
-        // 15 second timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         
@@ -798,7 +981,6 @@ async function fetchGoogleSheetData(sheetId, sheetName) {
 }
 
 function setupAutoSync(sheetId, sheetName) {
-    // Clear existing interval
     if (autoSyncInterval) {
         clearInterval(autoSyncInterval);
         autoSyncInterval = null;
@@ -806,36 +988,28 @@ function setupAutoSync(sheetId, sheetName) {
     
     isAutoSyncEnabled = true;
     
-    // Get indicator elements
     const indicator = $('syncIndicator');
     const spinner = indicator.querySelector('.spinner');
     const text = indicator.querySelector('span:last-child');
     
-    // Set to IDLE state (no spinner)
     indicator.style.display = 'inline-flex';
     indicator.className = 'sync-indicator';
     if (spinner) spinner.style.display = 'none';
     text.textContent = 'Auto-sync (10m)';
     
-    // Start interval
     autoSyncInterval = setInterval(async () => {
         try {
-            // ===== SYNCING STATE =====
             indicator.className = 'sync-indicator syncing';
             if (spinner) spinner.style.display = 'inline-block';
             text.textContent = 'Syncing...';
             
-            // Fetch data
             const data = await fetchGoogleSheetData(sheetId, sheetName);
             
             if (data && data.length > 0) {
                 processWithValidation(data);
                 $('fileStatus').textContent = `🔄 Auto-synced at ${new Date().toLocaleTimeString()} - ${data.length} rows`;
-                
-                // ===== SUCCESS STATE =====
                 text.textContent = '✅ Done';
                 
-                // Return to IDLE after 2 seconds
                 setTimeout(() => {
                     if (isAutoSyncEnabled) {
                         indicator.className = 'sync-indicator';
@@ -846,13 +1020,10 @@ function setupAutoSync(sheetId, sheetName) {
             }
         } catch (error) {
             console.warn('Auto-sync failed:', error);
-            
-            // ===== ERROR STATE =====
             indicator.className = 'sync-indicator';
             if (spinner) spinner.style.display = 'none';
             text.textContent = '⚠️ Error';
             
-            // Return to IDLE after 3 seconds
             setTimeout(() => {
                 if (isAutoSyncEnabled) {
                     indicator.className = 'sync-indicator';
@@ -915,8 +1086,18 @@ function processWithValidation(data) {
     
     showValidationSummary(validRows.length, errorRows, validationResults);
     
-    rows = validRows;
-    $('fileStatus').textContent = `✅ Loaded ${rows.length.toLocaleString()} valid records. ${errorRows.length} rows had errors and were skipped.`;
+    // ===== KEY CHANGE: Store ALL valid rows for history, show only LATEST for dashboard =====
+    allValidRows = validRows; // Keep ALL for trends
+    
+    // Get only the latest record per site for the main display
+    const latestRecords = getLatestRecords(validRows);
+    rows = latestRecords; // Show only latest records
+    
+    // Build historical data for trends
+    buildHistoricalData();
+    drawHistoricalTrends();
+    
+    $('fileStatus').textContent = `✅ ${rows.length.toLocaleString()} unique sites (latest records). ${validRows.length} total historical records.`;
     
     if (errorRows.length > 0) {
         console.warn('Skipped rows with errors:', errorRows);
@@ -958,7 +1139,7 @@ function showValidationSummary(validCount, errorRows, allResults) {
     
     if (validCount > 0 || errorRows.length > 0) {
         html += `<div class="validation-summary">
-            <span class="valid">✅ Valid: ${validCount}</span>
+            <span class="valid">✅ Unique Sites: ${validCount}</span>
             <span class="invalid">❌ Errors: ${errorRows.length}</span>
             <span class="warning">⚠️ Warnings: ${warnings.length}</span>
         </div>`;
@@ -1024,14 +1205,12 @@ function calc(r){
 // EVENT LISTENERS - INSTANT SEARCH & FILTERS
 // ============================================================
 
-// SEARCH - INSTANT (no delay)
 $('search').addEventListener('input', function() {
     activeKpiFilter = null;
     document.querySelectorAll('.kpi').forEach(el => el.classList.remove('active-filter'));
-    render(); // Instant!
+    render();
 });
 
-// Other filters - also instant but with throttled rendering for performance
 ['alarmFilter','daysFilter','dateFilter','sortBy'].forEach(id => {
     $(id).addEventListener('change', function() {
         activeKpiFilter = null;
@@ -1054,7 +1233,7 @@ function throttledRender() {
         const renderTime = (endTime - renderStartTime).toFixed(2);
         const perfStats = $('perfStats');
         perfStats.textContent = `⚡ Render: ${renderTime}ms • ${filtered.length} rows`;
-    }, 50); // Faster response
+    }, 50);
 }
 
 function getPageData() {
@@ -1326,7 +1505,7 @@ function resetFilters(){
 }
 
 function clearData(){
-    rows=[]; filtered=[];
+    rows=[]; filtered=[]; allValidRows=[];
     $('fileStatus').textContent='No data loaded. Click "Upload Data" to begin.';
     $('validationContainer').innerHTML='';
     activeKpiFilter = null;
@@ -1334,12 +1513,19 @@ function clearData(){
     updateConnectionStatus(false);
     currentSheetId = '';
     currentSheetName = '';
+    historicalData = [];
+    
     if (autoSyncInterval) {
         clearInterval(autoSyncInterval);
         autoSyncInterval = null;
         isAutoSyncEnabled = false;
         $('syncIndicator').style.display = 'none';
     }
+    
+    ['fuelTrend', 'consumptionTrend', 'shortageTrend'].forEach(key => {
+        if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+    });
+    
     throttledRender();
 }
 
@@ -1372,13 +1558,39 @@ function exportCSV(){
 
 function loadDemo(){
     const today = new Date();
-    const demoData = [
-        {'Site ID':'DEMO001','Date':today,'Opening':100,'Filled':200,'Closing':300,'DG RH/Day':8,'CPH':20,'Consumption/day':160,'Current Consumed':260,'Remaining Fuel':40,'Alarm':'Monitor','Operation Region':'North','State':'Kachin','APM':'M3'},
-        {'Site ID':'DEMO002','Date':today,'Opening':100,'Filled':150,'Closing':250,'DG RH/Day':8,'CPH':18,'Consumption/day':144,'Current Consumed':280,'Remaining Fuel':-30,'Alarm':'Shortage','Operation Region':'South','State':'Mon','APM':'M5'},
-        {'Site ID':'DEMO003','Date':today,'Opening':200,'Filled':250,'Closing':380,'DG RH/Day':6,'CPH':22,'Consumption/day':132,'Current Consumed':150,'Remaining Fuel':230,'Alarm':'Normal','Operation Region':'East','State':'Shan','APM':'M2'},
-        {'Site ID':'DEMO004','Date':today,'Opening':50,'Filled':100,'Closing':80,'DG RH/Day':10,'CPH':25,'Consumption/day':250,'Current Consumed':70,'Remaining Fuel':10,'Alarm':'Warning','Operation Region':'West','State':'Rakhine','APM':'M3'},
-        {'Site ID':'DEMO005','Date':today,'Opening':300,'Filled':350,'Closing':500,'DG RH/Day':5,'CPH':15,'Consumption/day':75,'Current Consumed':100,'Remaining Fuel':400,'Alarm':'Normal','Operation Region':'North','State':'Kachin','APM':'M5'},
-    ];
+    const demoData = [];
+    const sites = ['DEMO001','DEMO002','DEMO003','DEMO004','DEMO005'];
+    const regions = ['North','South','East','West'];
+    const states = ['Kachin','Mon','Shan','Rakhine','Yangon','Bago'];
+    const apms = ['M2','M3','M5'];
+    
+    // Generate 30 days of historical data (including duplicates for demo)
+    for (let d = 0; d < 30; d++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - (29 - d));
+        sites.forEach((site, i) => {
+            const baseFuel = 300 - (i * 40) + Math.random() * 60;
+            const cons = 20 + Math.random() * 40;
+            const daysSince = Math.floor(Math.random() * 10);
+            const remaining = Math.max(baseFuel - cons * daysSince, -20);
+            demoData.push({
+                'Site ID': site,
+                'Date': date,
+                'Opening': Math.round(baseFuel),
+                'Filled': 400 + Math.round(Math.random() * 200),
+                'Closing': Math.round(baseFuel + 400 + Math.random() * 200),
+                'DG RH/Day': Math.round(5 + Math.random() * 15),
+                'CPH': (2 + Math.random() * 3).toFixed(1),
+                'Consumption/day': Math.round(cons),
+                'Current Consumed': Math.round(cons * daysSince),
+                'Remaining Fuel': Math.round(remaining),
+                'Alarm': remaining < 50 ? 'Critical' : remaining < 150 ? 'Warning' : 'Normal',
+                'Operation Region': regions[i % regions.length],
+                'State': states[i % states.length],
+                'APM': apms[i % apms.length]
+            });
+        });
+    }
     processWithValidation(demoData);
     updateConnectionStatus(true, 'Demo Data');
     currentSheetId = '';
@@ -1410,10 +1622,12 @@ document.addEventListener('keydown', (e) => {
 render();
 
 console.log('🚀 Fuel Monitoring Dashboard loaded');
+console.log('📊 Historical Trends: ✅ Enabled (using ALL data)');
+console.log('🔍 Dashboard shows: ✅ Latest record per site only');
+console.log('📈 7/14/30/60 day trend analysis available');
 console.log('📤 Click "Upload Data" to load your fuel data');
 console.log('🔗 Google Sheets API Key:', GOOGLE_API_KEY === 'AIzaSyDsGXi-GWWFp8o10Sgh7iFYXB44xLefM04' ? '⚠️ Not configured' : '✅ Configured');
 console.log('🔄 Click "Refresh Data" for manual update');
-console.log('🔍 Search is now INSTANT - no delay!');
 </script>
 </body>
 </html>
