@@ -798,6 +798,7 @@ async function fetchGoogleSheetData(sheetId, sheetName) {
 }
 
 function setupAutoSync(sheetId, sheetName) {
+    // Clear existing interval
     if (autoSyncInterval) {
         clearInterval(autoSyncInterval);
         autoSyncInterval = null;
@@ -805,26 +806,61 @@ function setupAutoSync(sheetId, sheetName) {
     
     isAutoSyncEnabled = true;
     
-    $('syncIndicator').style.display = 'inline-flex';
-    $('syncIndicator').className = 'sync-indicator syncing';
+    // Get indicator elements
+    const indicator = $('syncIndicator');
+    const spinner = indicator.querySelector('.spinner');
+    const text = indicator.querySelector('span:last-child');
     
+    // Set to IDLE state (no spinner)
+    indicator.style.display = 'inline-flex';
+    indicator.className = 'sync-indicator';
+    if (spinner) spinner.style.display = 'none';
+    text.textContent = 'Auto-sync (10m)';
+    
+    // Start interval
     autoSyncInterval = setInterval(async () => {
         try {
-            $('syncIndicator').querySelector('span:last-child').textContent = 'Syncing...';
+            // ===== SYNCING STATE =====
+            indicator.className = 'sync-indicator syncing';
+            if (spinner) spinner.style.display = 'inline-block';
+            text.textContent = 'Syncing...';
+            
+            // Fetch data
             const data = await fetchGoogleSheetData(sheetId, sheetName);
+            
             if (data && data.length > 0) {
                 processWithValidation(data);
                 $('fileStatus').textContent = `🔄 Auto-synced at ${new Date().toLocaleTimeString()} - ${data.length} rows`;
-                $('syncIndicator').querySelector('span:last-child').textContent = 'Synced ✓';
+                
+                // ===== SUCCESS STATE =====
+                text.textContent = '✅ Done';
+                
+                // Return to IDLE after 2 seconds
                 setTimeout(() => {
-                    $('syncIndicator').querySelector('span:last-child').textContent = 'Auto-sync';
+                    if (isAutoSyncEnabled) {
+                        indicator.className = 'sync-indicator';
+                        if (spinner) spinner.style.display = 'none';
+                        text.textContent = 'Auto-sync (10m)';
+                    }
                 }, 2000);
             }
         } catch (error) {
             console.warn('Auto-sync failed:', error);
-            $('syncIndicator').querySelector('span:last-child').textContent = 'Sync error';
+            
+            // ===== ERROR STATE =====
+            indicator.className = 'sync-indicator';
+            if (spinner) spinner.style.display = 'none';
+            text.textContent = '⚠️ Error';
+            
+            // Return to IDLE after 3 seconds
+            setTimeout(() => {
+                if (isAutoSyncEnabled) {
+                    indicator.className = 'sync-indicator';
+                    text.textContent = 'Auto-sync (10m)';
+                }
+            }, 3000);
         }
-    }, 100000); // 30 seconds
+    }, 600000); // 10 minutes
 }
 
 // ============================================================
