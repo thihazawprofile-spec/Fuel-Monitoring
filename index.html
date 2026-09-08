@@ -251,11 +251,11 @@ input,select{border:1px solid #d7dce5;border-radius:9px;padding:10px;background:
 .card h2{font-size:16px;margin:0 0 14px}.chartBox{height:290px}
 .tableCard{overflow:hidden}.tableTop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:12px}
 .tableWrap{overflow:auto;max-height:560px;border:1px solid var(--border);border-radius:10px}
-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1250px}
-th{position:sticky;top:0;background:#f1f5f9;z-index:2;text-align:left;padding:10px;border-bottom:1px solid #dfe4eb;white-space:nowrap}
-td{padding:9px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:11px;min-width:1500px}
+th{position:sticky;top:0;background:#f1f5f9;z-index:2;text-align:left;padding:8px 10px;border-bottom:1px solid #dfe4eb;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #edf0f4;white-space:nowrap}
 tr:hover{background:#f8fafc}
-.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:800}
 .critical{background:#fee2e2;color:#991b1b}.major{background:#ffedd5;color:#9a3412}.minor{background:#fef3c7;color:#854d0e}.normal{background:#dcfce7;color:#166534}.unknown{background:#e5e7eb;color:#374151}
 .daysCritical{color:var(--red);font-weight:800}.daysMajor{color:var(--orange);font-weight:800}.daysMinor{color:var(--yellow);font-weight:800}.daysNormal{color:var(--green);font-weight:800}
 .empty{text-align:center;padding:50px;color:var(--muted)}footer{text-align:center;color:#8a94a6;font-size:11px;padding:18px}
@@ -384,9 +384,25 @@ tr:hover{background:#f8fafc}
   <div class="tableWrap" id="tableWrap">
    <table>
     <thead><tr>
-     <th>Priority</th><th>Alarm</th><th>Site ID</th><th>Region</th><th>State</th><th>Filled Date</th><th>Opening</th><th>Filled</th><th>Closing</th><th>Consumption/day</th><th>Consumed</th><th>Remaining Fuel</th><th>Days Remaining</th><th>Estimated Shortage</th><th>Original Alarm</th>
+     <th>Priority</th>
+     <th>Alarm</th>
+     <th>Site ID</th>
+     <th>Region</th>
+     <th>State</th>
+     <th>APM</th>
+     <th>Filled Date</th>
+     <th>Opening</th>
+     <th>Filled</th>
+     <th>Closing</th>
+     <th>DG RH/Day</th>
+     <th>Consumption/day</th>
+     <th>Consumed</th>
+     <th>Remaining Fuel</th>
+     <th>Days Remaining</th>
+     <th>Estimated Shortage</th>
+     <th>Original Alarm</th>
     </tr></thead>
-    <tbody id="tbody"><tr><td colspan="15" class="empty">Click "Upload Data" to load your fuel monitoring data.</td></tr></tbody>
+    <tbody id="tbody"><tr><td colspan="17" class="empty">Click "Upload Data" to load your fuel monitoring data.</td></tr></tbody>
    </table>
   </div>
   <div class="pagination" id="pagination">
@@ -880,6 +896,11 @@ function calc(r){
     const opening=num(val(r,['Opening','Opening Fuel']));
     const filled=num(val(r,['Filled','Fuel Filled','Filled Qty','Fuel Fill']));
     const closing=num(val(r,['Closing','Closing Fuel']));
+    
+    // ADD APM
+    const apm=val(r,['APM','Apm']);
+    
+    // DG RH/Day
     const dg=num(val(r,['DG RH/Day','DG RH Day','DG RH','DG Running Hours/Day']));
     const cph=num(val(r,['CPH','Consumption Per Hour','L/H']));
     const consRaw=num(val(r,['Consumption/day','Consumption Day','Daily Consumption','Consumption per day']));
@@ -898,7 +919,7 @@ function calc(r){
     const state=val(r,['State','State/Division','Division']);
     const alarm=val(r,['Alarm','Status']);
     let priority=status==='CRITICAL'?1:status==='MAJOR'?2:status==='MINOR'?3:status==='NORMAL'?4:5;
-    return {...r,_site:String(site||''),_date:filledDate,_opening:opening,_filled:filled,_closing:closing,_dg:dg,_cph:cph,_cons:cons,_consumed:consumed,_remaining:remaining,_days:days,_shortage:shortage,_status:status,_priority:priority,_region:String(region||''),_state:String(state||''),_alarm:String(alarm||''),_warnings:[]};
+    return {...r,_site:String(site||''),_date:filledDate,_opening:opening,_filled:filled,_closing:closing,_apm:String(apm||''),_dg:dg,_cph:cph,_cons:cons,_consumed:consumed,_remaining:remaining,_days:days,_shortage:shortage,_status:status,_priority:priority,_region:String(region||''),_state:String(state||''),_alarm:String(alarm||''),_warnings:[]};
 }
 
 // ============================================================
@@ -1075,7 +1096,7 @@ function drawTableOptimized() {
     $('tableStatus').textContent = `Showing ${start + 1}-${end} of ${filtered.length} sites`;
     
     if (!pageData.length) {
-        tb.innerHTML = '<tr><td colspan="15" class="empty">No matching sites.</td></tr>';
+        tb.innerHTML = '<tr><td colspan="17" class="empty">No matching sites.</td></tr>';
         updatePagination();
         return;
     }
@@ -1096,10 +1117,12 @@ function drawTableOptimized() {
             <td><b>${esc(r._site)} ${warningBadge}</b></td>
             <td>${esc(r._region)}</td>
             <td>${esc(r._state)}</td>
+            <td>${esc(r._apm) || '—'}</td>
             <td>${fmtDate(r._date)}</td>
             <td>${fmt(r._opening)}</td>
             <td>${fmt(r._filled)}</td>
             <td>${fmt(r._closing)}</td>
+            <td>${fmt(r._dg)}</td>
             <td>${fmt(r._cons)}</td>
             <td>${fmt(r._consumed)}</td>
             <td><b>${fmt(r._remaining)}</b></td>
@@ -1208,10 +1231,12 @@ function exportCSV(){
         'Site ID': r._site,
         Region: r._region,
         State: r._state,
+        APM: r._apm || '',
         'Filled Date': isoDate(r._date),
         Opening: r._opening,
         Filled: r._filled,
         Closing: r._closing,
+        'DG RH/Day': r._dg,
         'Consumption/day': r._cons,
         'Consumed': r._consumed,
         'Remaining Fuel': r._remaining,
@@ -1228,11 +1253,11 @@ function exportCSV(){
 function loadDemo(){
     const today = new Date();
     const demoData = [
-        {'Site ID':'DEMO001','Date':today,'Opening':100,'Filled':200,'Closing':300,'DG RH/Day':8,'CPH':20,'Consumption/day':160,'Current Consumed':260,'Remaining Fuel':40,'Alarm':'Monitor','Operation Region':'North','State':'Kachin'},
-        {'Site ID':'DEMO002','Date':today,'Opening':100,'Filled':150,'Closing':250,'DG RH/Day':8,'CPH':18,'Consumption/day':144,'Current Consumed':280,'Remaining Fuel':-30,'Alarm':'Shortage','Operation Region':'South','State':'Mon'},
-        {'Site ID':'DEMO003','Date':today,'Opening':200,'Filled':250,'Closing':380,'DG RH/Day':6,'CPH':22,'Consumption/day':132,'Current Consumed':150,'Remaining Fuel':230,'Alarm':'Normal','Operation Region':'East','State':'Shan'},
-        {'Site ID':'DEMO004','Date':today,'Opening':50,'Filled':100,'Closing':80,'DG RH/Day':10,'CPH':25,'Consumption/day':250,'Current Consumed':70,'Remaining Fuel':10,'Alarm':'Warning','Operation Region':'West','State':'Rakhine'},
-        {'Site ID':'DEMO005','Date':today,'Opening':300,'Filled':350,'Closing':500,'DG RH/Day':5,'CPH':15,'Consumption/day':75,'Current Consumed':100,'Remaining Fuel':400,'Alarm':'Normal','Operation Region':'North','State':'Kachin'},
+        {'Site ID':'DEMO001','Date':today,'Opening':100,'Filled':200,'Closing':300,'DG RH/Day':8,'CPH':20,'Consumption/day':160,'Current Consumed':260,'Remaining Fuel':40,'Alarm':'Monitor','Operation Region':'North','State':'Kachin','APM':'M3'},
+        {'Site ID':'DEMO002','Date':today,'Opening':100,'Filled':150,'Closing':250,'DG RH/Day':8,'CPH':18,'Consumption/day':144,'Current Consumed':280,'Remaining Fuel':-30,'Alarm':'Shortage','Operation Region':'South','State':'Mon','APM':'M5'},
+        {'Site ID':'DEMO003','Date':today,'Opening':200,'Filled':250,'Closing':380,'DG RH/Day':6,'CPH':22,'Consumption/day':132,'Current Consumed':150,'Remaining Fuel':230,'Alarm':'Normal','Operation Region':'East','State':'Shan','APM':'M2'},
+        {'Site ID':'DEMO004','Date':today,'Opening':50,'Filled':100,'Closing':80,'DG RH/Day':10,'CPH':25,'Consumption/day':250,'Current Consumed':70,'Remaining Fuel':10,'Alarm':'Warning','Operation Region':'West','State':'Rakhine','APM':'M3'},
+        {'Site ID':'DEMO005','Date':today,'Opening':300,'Filled':350,'Closing':500,'DG RH/Day':5,'CPH':15,'Consumption/day':75,'Current Consumed':100,'Remaining Fuel':400,'Alarm':'Normal','Operation Region':'North','State':'Kachin','APM':'M5'},
     ];
     processWithValidation(demoData);
     updateConnectionStatus(true, 'Demo Data');
